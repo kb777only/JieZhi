@@ -1,0 +1,23 @@
+.tools/
+.cache/
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.spec
+build/
+dist/
+.gradle/
+local.properties
+*.jks
+artifacts/
+Test Material/
+assets/platform-tools/
+assets/jiezhi-client.apk
+assets/setup-usb.sh
+assets/licenses/
+core
+.idea/
+.vscode/
+.coverage
+htmlcov/
