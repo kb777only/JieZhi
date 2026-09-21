@@ -1,75 +1,356 @@
-"""Release checks and in-place replacement of the packaged bundle.
+"""Checking `main` for new commits, and fast-forwarding the installation onto them.
 
-What is running is a PyInstaller bundle in `~/.local/opt/jiezhi`, not this
-checkout, so an update means replacing a directory that a live process is
-reading itself out of. Two consequences shape everything here:
+An installation is a git checkout of this repository with its own virtual
+environment, put there by `scripts/install.sh`. That is the whole design: the
+host is pure Python, so there is nothing to compile and nothing to package, and
+the thing that updates is a `git fetch`. GitHub already serves the code, so no
+release, artifact store or build server sits between a commit and a user.
 
-- The previous bundle is renamed aside instead of deleted. The running process
-  still loads parts of itself lazily, and those files have to outlive it; the
-  leftover is cleared on the next launch.
-- Nothing is replaced until the download is complete and its published
-  checksum matches, so aborting at any earlier point leaves the installation
-  exactly as it was.
+What that costs, and what it buys:
 
-Releases are read from the public list endpoint rather than `/releases/latest`,
-which hides pre-releases: every JieZhi release so far is an alpha.
+- There is no version to compare, so the installed commit is compared against
+  the head of `main`, and the commits in between are the patch notes. They read
+  well because this repository writes commit messages as prose.
+- An update can only move a checkout that is clean and on the tracked branch.
+  A checkout with uncommitted work is refused rather than reset, so nobody
+  loses an afternoon to the Update button.
+- `pip install -e .` means the working tree *is* the running code, so moving the
+  tree is the whole update. Dependencies are only reinstalled when the commits
+  being taken on actually touched them.
 """
 from __future__ import annotations
 
 import hashlib
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import sys
-import tarfile
 
 import requests
 
 from . import __version__
-from .client import CACHE
+from .client import CACHE, ROOT
 
 REPO = "kb777only/JieZhi"
 API = "https://api.github.com"
-RELEASES_PAGE = f"https://github.com/{REPO}/releases"
+BRANCH = "main"
+REPO_PAGE = f"https://github.com/{REPO}"
 
-INSTALL_DIR = Path.home() / ".local/opt/jiezhi"
-DESKTOP_FILE = Path.home() / ".local/share/applications/jiezhi.desktop"
-
-# What `scripts/package.sh` uploads: the Linux bundle, and the sums for all of it.
-ARCHIVE = re.compile(r"JieZhi-.+-linux-x86_64\.tar\.gz")
-CHECKSUMS = "SHA256SUMS"
+# The phone client needs the Android SDK to build, which an installation does
+# not have, so CI publishes it to a branch of its own for the app to fetch.
+CLIENT_BRANCH = "prebuilt"
+CLIENT_BASE = f"https://raw.githubusercontent.com/{REPO}/{CLIENT_BRANCH}"
 
 BLOCK = 1024 * 1024
 
-_STAGES = {"alpha": 0, "a": 0, "beta": 1, "b": 1, "rc": 2, "c": 2}
-_VERSION = re.compile(r"v?(\d+(?:\.\d+)*)(?:[-_.]?(alpha|beta|rc|a|b|c)[-_.]?(\d+)?)?")
+DESKTOP_FILE = Path.home() / ".local/share/applications/jiezhi.desktop"
+
+# The files whose change means the virtual environment has to be rebuilt. Every
+# other update is a working-tree move and needs no install step at all.
+DEPENDENCIES = ("pyproject.toml", "requirements.txt")
+
+# How many commits of patch notes to show. More than this and the box is a log,
+# not a summary.
+NOTES = 40
+
+GIT_TIMEOUT = 180
+PIP_TIMEOUT = 900
 
 
 class Cancelled(Exception):
-    """Raised when the user abandons a download that is already running."""
+    """Raised when the user abandons an update that is already running."""
 
 
-def parse_version(text):
-    """A sort key for `0.7.0-alpha.1`, `v0.7.0-alpha.1` and the `0.7.0a1` spelling alike.
+def git(root: Path, *args: str, timeout: int = GIT_TIMEOUT) -> str:
+    """Run git in a checkout and hand back its output, or raise with its error."""
+    if not shutil.which("git"):
+        raise RuntimeError("git is not installed, so JieZhi cannot update itself.")
+    result = subprocess.run(["git", "-C", str(root), *args],
+                            capture_output=True, text=True, timeout=timeout)
+    if result.returncode:
+        raise RuntimeError((result.stderr or result.stdout).strip() or f"git {args[0]} failed.")
+    return result.stdout.strip()
 
-    A final release outranks every pre-release of the same numbers, which is the
-    one comparison a plain string sort gets backwards. Anything unrecognised
-    returns None, and an unrecognised version is never treated as newer.
+
+def short(sha: str) -> str:
+    return str(sha)[:7]
+
+
+def write_desktop_entry(root: Path, desktop_file: Path = DESKTOP_FILE) -> Path:
+    """Point the application menu at a checkout's launcher."""
+    root = Path(root); desktop_file = Path(desktop_file)
+    desktop_file.parent.mkdir(parents=True, exist_ok=True)
+    executable = str(launcher(root)).replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`").replace("$", "\\$")
+    desktop_file.write_text(
+        "[Desktop Entry]\nType=Application\nName=JieZhi 借智\n"
+        "Comment=Borrow intelligence from your Android phone\n"
+        f'Exec="{executable}"\nIcon={root}/assets/jiezhi.svg\n'
+        "Terminal=false\nCategories=Utility;\n")
+    desktop_file.chmod(0o644)
+    return desktop_file
+
+
+def launcher(root: Path) -> Path:
+    """The console script `pip install -e .` puts in the checkout's environment."""
+    return Path(root) / ".venv/bin/jiezhi"
+
+
+def restart(executable) -> None:
+    """Start the updated app, detached, and leave this one to exit."""
+    subprocess.Popen([str(executable)], start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def notes_for(commits: list[dict]) -> str:
+    """The patch notes: what each commit says, newest first."""
+    lines = []
+    for commit in commits[:NOTES]:
+        message = ((commit.get("commit") or {}).get("message") or "").strip()
+        if not message:
+            continue
+        subject, _, body = message.partition("\n")
+        lines.append(f"### {subject}")
+        if body.strip():
+            lines.append(body.strip())
+        lines.append("")
+    if len(commits) > NOTES:
+        lines.append(f"…and {len(commits) - NOTES} more.")
+    return "\n\n".join(lines).strip()
+
+
+class Updates:
+    """The commit feed and the fast-forward — with no Qt in any of it."""
+
+    def __init__(self, version: str = __version__, repo: str = REPO, api: str = API,
+                 branch: str = BRANCH, root: Path | None = None, desktop_file: Path | None = None):
+        self.version = version
+        self.repo = repo
+        self.api = api
+        self.branch = branch
+        self.root = Path(root) if root else Path(ROOT)
+        self.desktop_file = Path(desktop_file) if desktop_file else DESKTOP_FILE
+        self.session = requests.Session()
+        self.session.headers["User-Agent"] = f"JieZhi/{version}"
+        self.session.headers["Accept"] = "application/vnd.github+json"
+
+    # Where we are ------------------------------------------------------------
+
+    def checkout(self) -> Path | None:
+        """The checkout an update would move, or None when this is not one."""
+        return self.root if (self.root / ".git").exists() else None
+
+    def installed(self) -> str:
+        """The commit this app is running."""
+        return git(self.root, "rev-parse", "HEAD")
+
+    def blocked(self) -> str:
+        """Why this installation cannot update itself, or '' when it can."""
+        if self.checkout() is None:
+            return (f"{self.root} is not a git checkout, so JieZhi cannot update itself. "
+                    "Reinstall with the one-line install command.")
+        if not shutil.which("git"):
+            return "git is not installed, so JieZhi cannot update itself."
+        if not os.access(self.root, os.W_OK):
+            return f"{self.root} is not writable by this account, so the update cannot be installed."
+        try:
+            branch = git(self.root, "rev-parse", "--abbrev-ref", "HEAD")
+            dirty = git(self.root, "status", "--porcelain")
+        except (RuntimeError, subprocess.SubprocessError) as error:
+            return f"{self.root} could not be read as a git checkout: {error}"
+        if branch != self.branch:
+            return (f"This checkout is on {branch}, not {self.branch}. "
+                    f"Updating would move it off your branch, so it was left alone.")
+        if dirty:
+            return (f"{self.root} has uncommitted changes. Commit or discard them, "
+                    "and they will not be touched in the meantime.")
+        if not launcher(self.root).exists():
+            return (f"{launcher(self.root)} is missing, so there would be nothing to restart. "
+                    "Re-run the one-line install command.")
+        return ""
+
+    # What is out there -------------------------------------------------------
+
+    def api_get(self, path: str, **kwargs):
+        try:
+            response = self.session.get(f"{self.api}{path}", timeout=(10, 30), **kwargs)
+        except requests.RequestException:
+            raise RuntimeError("Could not reach GitHub to check for updates. Check your connection.") from None
+        if response.status_code in (403, 429):
+            raise RuntimeError("GitHub is rate limiting update checks. Try again in a few minutes.")
+        if response.status_code == 404:
+            raise RuntimeError(f"{self.repo} has no branch named {self.branch}.")
+        if not response.ok:
+            raise RuntimeError(f"GitHub returned HTTP {response.status_code} for the update check.")
+        try:
+            return response.json()
+        except ValueError:
+            raise RuntimeError("GitHub returned an unreadable answer to the update check.") from None
+
+    def head(self) -> dict:
+        return self.api_get(f"/repos/{self.repo}/commits/{self.branch}")
+
+    def version_at(self, ref: str) -> str:
+        """The version string at a commit, read as the file rather than as JSON.
+
+        Cosmetic: it only decides whether the box can name a version, so a
+        failure here is not one.
+        """
+        try:
+            response = self.session.get(
+                f"{self.api}/repos/{self.repo}/contents/host/jiezhi/__init__.py",
+                params={"ref": ref}, headers={"Accept": "application/vnd.github.raw"}, timeout=(10, 30))
+            text = response.text if response.ok else ""
+        except requests.RequestException:
+            return ""
+        for line in text.splitlines():
+            if line.startswith("__version__"):
+                return line.partition("=")[2].strip().strip('"\'')
+        return ""
+
+    def check(self) -> dict | None:
+        """What `main` has that this checkout does not, or None when level."""
+        if self.checkout() is None:
+            return None
+        try:
+            installed = self.installed()
+        except (RuntimeError, subprocess.SubprocessError) as error:
+            raise RuntimeError(f"Could not read the installed version: {error}") from None
+        head = self.head()
+        target = str(head.get("sha") or "")
+        if not target or target == installed:
+            return None
+        comparison = self.api_get(f"/repos/{self.repo}/compare/{installed}...{target}")
+        # Newest first reads as patch notes; the API hands them back oldest first.
+        commits = list(reversed(comparison.get("commits") or []))
+        behind = int(comparison.get("ahead_by") or len(commits))
+        if comparison.get("status") == "identical" or not behind:
+            return None
+        return {
+            "head": target,
+            "short": short(target),
+            "installed": installed,
+            "version": self.version_at(target),
+            "count": behind,
+            "commits": commits,
+            "notes": notes_for(commits),
+            "url": f"{REPO_PAGE}/compare/{short(installed)}...{short(target)}",
+            "published": ((head.get("commit") or {}).get("author") or {}).get("date") or "",
+        }
+
+    # Taking it on ------------------------------------------------------------
+
+    def touches_dependencies(self, before: str, after: str) -> bool:
+        try:
+            changed = git(self.root, "diff", "--name-only", f"{before}..{after}", "--", *DEPENDENCIES)
+        except (RuntimeError, subprocess.SubprocessError):
+            # Unreadable means unknown, and an unnecessary reinstall is cheap
+            # next to an update that leaves a dependency behind.
+            return True
+        return bool(changed.strip())
+
+    def install(self, update: dict, progress=lambda percent, message: None, cancel=None) -> Path:
+        """Fast-forward the checkout onto a commit, rolling back if it will not run."""
+        reason = self.blocked()
+        if reason:
+            raise RuntimeError(reason)
+        target = update["head"]
+        before = self.installed()
+        progress(0, "Fetching the new code…")
+        git(self.root, "fetch", "--prune", "origin", self.branch)
+        if cancel is not None and cancel.is_set():
+            raise Cancelled()
+        progress(45, f"Moving to {short(target)}…")
+        git(self.root, "reset", "--hard", target)
+        try:
+            if self.touches_dependencies(before, target):
+                progress(65, "Updating dependencies…")
+                self.rebuild()
+            if not launcher(self.root).exists():
+                raise RuntimeError("The update left no launcher behind.")
+            write_desktop_entry(self.root, self.desktop_file)
+        except BaseException:
+            # The fetch is harmless and the tree move is reversible, so anything
+            # that goes wrong after it puts the old commit back.
+            progress(90, "That did not work · putting the previous version back…")
+            git(self.root, "reset", "--hard", before)
+            raise
+        progress(100, "Updated · restarting JieZhi")
+        return self.root
+
+    def rebuild(self) -> None:
+        """Reinstall the checkout into its own environment."""
+        python = self.root / ".venv/bin/python"
+        if not python.exists():
+            raise RuntimeError(f"{python} is missing, so dependencies could not be updated.")
+        result = subprocess.run([str(python), "-m", "pip", "install", "-q", "-e", str(self.root)],
+                                capture_output=True, text=True, timeout=PIP_TIMEOUT)
+        if result.returncode:
+            raise RuntimeError((result.stderr or result.stdout).strip()[-400:] or "Dependencies could not be updated.")
+
+
+def fetch_client(progress=lambda percent, message: None, base: str = CLIENT_BASE, cache: Path | None = None) -> Path:
+    """Download the prebuilt phone client, verified against the manifest beside it.
+
+    Only used when neither a packaged APK nor a local Android build is present,
+    which is every installation that did not build the client itself.
     """
-    match = _VERSION.fullmatch(str(text).strip().lower())
-    if not match:
-        return None
-    numbers = (tuple(int(n) for n in match.group(1).split(".")) + (0, 0, 0, 0))[:4]
-    if match.group(2) is None:
-        return numbers, 1, 0, 0
-    return numbers, 0, _STAGES[match.group(2)], int(match.group(3) or 0)
+    cache = Path(cache) if cache else CACHE / "client"
+    session = requests.Session()
+    session.headers["User-Agent"] = f"JieZhi/{__version__}"
+    progress(0, "Looking up the phone client…")
+    try:
+        manifest = session.get(f"{base}/manifest.json", timeout=(10, 30))
+        if manifest.status_code == 404:
+            raise RuntimeError("No prebuilt phone client has been published yet. Build it with scripts/build-android.sh.")
+        if not manifest.ok:
+            raise RuntimeError(f"The phone client manifest returned HTTP {manifest.status_code}.")
+        details = manifest.json()
+    except requests.RequestException:
+        raise RuntimeError("Could not reach GitHub for the phone client. Check your connection.") from None
+    except ValueError:
+        raise RuntimeError("The phone client manifest could not be read.") from None
 
+    name = str(details.get("name") or "jiezhi-client.apk")
+    expected = str(details.get("sha256") or "").lower()
+    if not expected:
+        raise RuntimeError("The phone client was published without a checksum, so it was not installed.")
+    cache.mkdir(parents=True, exist_ok=True)
+    target = cache / Path(name).name
+    if target.is_file() and sha256(target) == expected:
+        progress(100, "Phone client ready")
+        return target
 
-def is_newer(candidate, current):
-    first, second = parse_version(candidate), parse_version(current)
-    return bool(first and second and first > second)
+    partial = target.with_name(target.name + ".partial")
+    digest = hashlib.sha256()
+    written = 0
+    try:
+        with session.get(f"{base}/{name}", stream=True, timeout=(10, 120)) as response:
+            if not response.ok:
+                raise RuntimeError(f"The phone client download returned HTTP {response.status_code}.")
+            total = int(response.headers.get("Content-Length") or details.get("size") or 0)
+            with partial.open("wb") as stream:
+                for block in response.iter_content(BLOCK):
+                    written += len(block)
+                    if total and written > total:
+                        raise RuntimeError("The phone client download was larger than published.")
+                    stream.write(block)
+                    digest.update(block)
+                    progress(written * 100 // total if total else 0,
+                             f"Downloading the phone client · {written / 1024 ** 2:.0f} of {total / 1024 ** 2:.0f} MB"
+                             if total else "Downloading the phone client…")
+    except requests.RequestException:
+        partial.unlink(missing_ok=True)
+        raise RuntimeError("The phone client download was interrupted. Try again.") from None
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+    if digest.hexdigest() != expected:
+        partial.unlink(missing_ok=True)
+        raise RuntimeError("The phone client failed its checksum and was discarded.")
+    partial.replace(target)
+    progress(100, "Phone client downloaded and verified")
+    return target
 
 
 def sha256(path: Path) -> str:
@@ -80,250 +361,6 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def describe(release: dict) -> dict:
-    """One release, reduced to what the window needs to show and fetch."""
-    assets = release.get("assets") or []
-    archive = next((a for a in assets if ARCHIVE.fullmatch(a.get("name") or "")), None)
-    sums = next((a for a in assets if (a.get("name") or "") == CHECKSUMS), None)
-    tag = str(release.get("tag_name") or "")
-    return {
-        "tag": tag,
-        "version": tag.lstrip("v") or tag,
-        "name": release.get("name") or tag,
-        "notes": (release.get("body") or "").strip(),
-        "url": release.get("html_url") or RELEASES_PAGE,
-        "published": release.get("published_at") or "",
-        "prerelease": bool(release.get("prerelease")),
-        "archive": {
-            "name": archive["name"],
-            "url": archive["browser_download_url"],
-            "size": int(archive.get("size") or 0),
-        } if archive and archive.get("browser_download_url") else None,
-        "checksums": (sums or {}).get("browser_download_url") or "",
-    }
-
-
-def write_desktop_entry(destination: Path, desktop_file: Path = DESKTOP_FILE):
-    desktop_file.parent.mkdir(parents=True, exist_ok=True)
-    executable = str(destination / "JieZhi").replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`").replace("$", "\\$")
-    desktop_file.write_text(f'[Desktop Entry]\nType=Application\nName=JieZhi 借智\nComment=Borrow intelligence from your Android phone\nExec="{executable}"\nIcon={destination}/_internal/assets/jiezhi.svg\nTerminal=false\nCategories=Utility;\n')
-    desktop_file.chmod(0o644)
-
-
-def swap_bundle(stage: Path, destination: Path = INSTALL_DIR, desktop_file: Path | None = DESKTOP_FILE, keep_backup: bool = False):
-    """Atomically put a prepared bundle in place of an installation.
-
-    The old bundle is renamed aside before the new one takes its name, so a
-    failure anywhere in here puts the previous installation back untouched.
-
-    An in-place update passes keep_backup: the process being replaced is still
-    running out of that directory and loads parts of itself lazily, so the old
-    files have to outlive it. `clear_leftovers` removes them on the next launch.
-    """
-    stage = Path(stage); destination = Path(destination)
-    if not (stage / "JieZhi").is_file():
-        raise RuntimeError("Incomplete installer: missing JieZhi executable.")
-    backup = destination.with_name(destination.name + ".previous")
-    if backup.exists():
-        shutil.rmtree(backup)
-    if destination.exists():
-        destination.rename(backup)
-    try:
-        stage.rename(destination)
-        if desktop_file is not None:
-            write_desktop_entry(destination, Path(desktop_file))
-    except Exception:
-        if destination.exists():
-            shutil.rmtree(destination)
-        if backup.exists():
-            backup.rename(destination)
-        raise
-    if backup.exists() and not keep_backup:
-        shutil.rmtree(backup)
-    return str(destination)
-
-
-def clear_leftovers(destination: Path = INSTALL_DIR):
-    """Remove what an update left behind. Safe only once the replaced process is gone."""
-    for suffix in (".previous", ".installing", ".unpack"):
-        path = Path(destination).with_name(Path(destination).name + suffix)
-        if path.exists():
-            shutil.rmtree(path, ignore_errors=True)
-
-
-def install_bundle(source: Path, destination: Path = INSTALL_DIR, desktop_file: Path = DESKTOP_FILE):
-    """Stage the full self-contained bundle, then atomically replace an installation."""
-    destination = Path(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    stage = destination.with_name(destination.name + ".installing")
-    if stage.exists():
-        shutil.rmtree(stage)
-    shutil.copytree(source, stage, symlinks=True)
-    return swap_bundle(stage, destination, desktop_file)
-
-
-def restart(executable) -> None:
-    """Start the freshly installed app, detached, and leave the old one to exit."""
-    subprocess.Popen([str(executable)], start_new_session=True,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-class Updates:
-    """The release feed, the download, and the swap — with no Qt in any of it."""
-
-    def __init__(self, version: str = __version__, repo: str = REPO, api: str = API, cache: Path | None = None):
-        self.version = version
-        self.repo = repo
-        self.api = api
-        self.cache = Path(cache) if cache else CACHE / "updates"
-        self.session = requests.Session()
-        self.session.headers["User-Agent"] = f"JieZhi/{version}"
-        self.session.headers["Accept"] = "application/vnd.github+json"
-
-    def bundle(self) -> Path | None:
-        """The directory an update would replace, or None when running from source."""
-        if not getattr(sys, "frozen", False):
-            return None
-        return Path(sys.executable).resolve().parent
-
-    def blocked(self) -> str:
-        """Why an in-place update cannot run here, or '' when it can."""
-        destination = self.bundle()
-        if destination is None:
-            return ("JieZhi is running from a source checkout, so it cannot replace itself. "
-                    "Update it with git, or install the packaged build.")
-        if not os.access(destination.parent, os.W_OK) or not os.access(destination, os.W_OK):
-            return f"{destination} is not writable by this account, so the update cannot be installed."
-        return ""
-
-    def check(self) -> dict | None:
-        """The newest published release above the running version, or None."""
-        try:
-            response = self.session.get(f"{self.api}/repos/{self.repo}/releases",
-                                        params={"per_page": 30}, timeout=(10, 30))
-        except requests.RequestException:
-            raise RuntimeError("Could not reach GitHub to check for updates. Check your connection.") from None
-        if response.status_code in (403, 429):
-            raise RuntimeError("GitHub is rate limiting update checks. Try again in a few minutes.")
-        if response.status_code == 404:
-            raise RuntimeError(f"No release feed was found for {self.repo}.")
-        if not response.ok:
-            raise RuntimeError(f"GitHub returned HTTP {response.status_code} for the release list.")
-        try:
-            releases = response.json()
-        except ValueError:
-            raise RuntimeError("GitHub returned an unreadable release list.") from None
-        best = None
-        for release in releases if isinstance(releases, list) else []:
-            if not isinstance(release, dict) or release.get("draft"):
-                continue
-            order = parse_version(release.get("tag_name") or "")
-            if order is None or not is_newer(release.get("tag_name") or "", self.version):
-                continue
-            if best is None or order > best[0]:
-                best = (order, describe(release))
-        return best[1] if best else None
-
-    def checksum(self, release: dict, name: str) -> str:
-        """The SHA-256 the release publishes for one asset.
-
-        A release that publishes sums has to produce the one for this file: a
-        checksum that cannot be read is a reason to stop, not to skip the check.
-        Only a release with no `SHA256SUMS` at all returns '' here.
-        """
-        url = release.get("checksums")
-        if not url:
-            return ""
-        try:
-            response = self.session.get(url, timeout=(10, 30))
-        except requests.RequestException:
-            raise RuntimeError("Could not read the release checksums, so the update was not installed.") from None
-        if not response.ok:
-            raise RuntimeError("Could not read the release checksums, so the update was not installed.")
-        for line in response.text.splitlines():
-            parts = line.split()
-            if len(parts) == 2 and parts[1].lstrip("*") == name:
-                return parts[0].strip().lower()
-        raise RuntimeError(f"The release publishes no checksum for {name}, so the update was not installed.")
-
-    def download(self, release: dict, progress=lambda percent, message: None, cancel=None) -> Path:
-        """Fetch the release bundle and verify it before anything is replaced."""
-        archive = release.get("archive")
-        if not archive:
-            raise RuntimeError("This release has no Linux bundle attached, so it cannot be installed from here.")
-        self.cache.mkdir(parents=True, exist_ok=True)
-        expected = self.checksum(release, archive["name"])
-        target = self.cache / Path(archive["name"]).name
-        if expected and target.is_file() and sha256(target) == expected:
-            progress(100, "Already downloaded and verified")
-            return target
-        partial = target.with_name(target.name + ".partial")
-        digest = hashlib.sha256()
-        written = 0
-        try:
-            with self.session.get(archive["url"], stream=True, timeout=(10, 60)) as response:
-                if not response.ok:
-                    raise RuntimeError(f"The download returned HTTP {response.status_code}.")
-                total = int(response.headers.get("Content-Length") or archive["size"] or 0)
-                with partial.open("wb") as stream:
-                    for block in response.iter_content(BLOCK):
-                        if cancel is not None and cancel.is_set():
-                            raise Cancelled()
-                        written += len(block)
-                        if total and written > total:
-                            raise RuntimeError("The download was larger than the published bundle.")
-                        stream.write(block)
-                        digest.update(block)
-                        progress(written * 100 // total if total else 0,
-                                 f"Downloading · {written / 1024 ** 2:.0f} of {total / 1024 ** 2:.0f} MB"
-                                 if total else f"Downloading · {written / 1024 ** 2:.0f} MB")
-        except requests.RequestException:
-            partial.unlink(missing_ok=True)
-            raise RuntimeError("The update download was interrupted. Nothing was changed; try again.") from None
-        except BaseException:
-            partial.unlink(missing_ok=True)
-            raise
-        if archive["size"] and written != archive["size"]:
-            partial.unlink(missing_ok=True)
-            raise RuntimeError("The download did not match the published size. Nothing was changed; try again.")
-        if expected:
-            if digest.hexdigest() != expected:
-                partial.unlink(missing_ok=True)
-                raise RuntimeError("The downloaded bundle failed its checksum and was discarded. Nothing was changed.")
-            progress(100, "Downloaded and verified")
-        else:
-            progress(100, "Downloaded · this release publishes no checksum")
-        partial.replace(target)
-        return target
-
-    def install(self, archive: Path, destination: Path, progress=lambda percent, message: None) -> Path:
-        """Unpack beside the installation, then swap it in keeping the old bundle."""
-        destination = Path(destination)
-        unpack = destination.with_name(destination.name + ".unpack")
-        stage = destination.with_name(destination.name + ".installing")
-        progress(0, "Unpacking the new version…")
-        for path in (unpack, stage):
-            if path.exists():
-                shutil.rmtree(path)
-        unpack.mkdir(parents=True)
-        try:
-            with tarfile.open(archive, "r:gz") as tar:
-                # 'data' refuses absolute paths, parent traversal and links that
-                # leave the directory, so a tampered archive cannot write outside it.
-                tar.extractall(unpack, filter="data")
-            inner = unpack / "JieZhi"
-            if not (inner / "JieZhi").is_file():
-                roots = [path for path in unpack.iterdir() if path.is_dir()]
-                inner = roots[0] if len(roots) == 1 else inner
-            if not (inner / "JieZhi").is_file():
-                raise RuntimeError("The downloaded archive does not contain a JieZhi bundle.")
-            inner.rename(stage)
-        finally:
-            shutil.rmtree(unpack, ignore_errors=True)
-        progress(70, "Putting the new version in place…")
-        # Only the real installation owns the launcher entry; a bundle run from
-        # somewhere else updates itself without redirecting the application menu.
-        desktop = DESKTOP_FILE if destination == INSTALL_DIR else None
-        swap_bundle(stage, destination, desktop_file=desktop, keep_backup=True)
-        progress(100, "Installed · restarting JieZhi")
-        return destination
+def running_from_checkout() -> bool:
+    """Whether this process is a checkout rather than something else entirely."""
+    return (Path(ROOT) / ".git").exists() and not getattr(sys, "frozen", False)

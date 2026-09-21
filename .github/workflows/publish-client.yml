@@ -1,0 +1,41 @@
+name: Publish phone client
+
+# The PC app installs and updates itself from this repository, so it needs no
+# build server. The phone client does: it needs the Android SDK, which an
+# installation is not going to have. This builds it on every push to main and
+# puts it on the `prebuilt` branch for the app to fetch.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-client
+  cancel-in-progress: true
+
+jobs:
+  client:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Install Android SDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Build phone media runtime
+        run: sh scripts/build-media.sh
+      - name: Stage pinned NPU runtime
+        run: python3 scripts/prepare-qnn.py
+      - name: Build the client
+        run: ./android/gradlew -p android assembleDebug --console plain
+      - name: Publish it
+        env:
+          JIEZHI_PUSH_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+        run: sh scripts/publish-client.sh

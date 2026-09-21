@@ -1,81 +1,107 @@
-# Updates
+# Install and update
 
-JieZhi checks its own GitHub releases and can replace the installed app with a
-newer one without a download page or a terminal.
+JieZhi installs and updates itself from this repository. There are no releases,
+no build artifacts and no download page.
+
+## What an installation is
+
+A git checkout with its own virtual environment:
+
+```
+~/.local/opt/jiezhi/          the checkout, on main
+~/.local/opt/jiezhi/.venv/    its environment, with JieZhi installed editable
+~/.local/opt/jiezhi/.tools/   platform-tools, if the system had no adb
+```
+
+`scripts/install.sh` puts it there:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kb777only/JieZhi/main/scripts/install.sh | sh
+```
+
+`raw.githubusercontent.com` serves a public repository unauthenticated, so the
+one-liner needs no release, no token and no hosting of our own.
+
+The install is editable (`pip install -e .`), which is the point: the working
+tree *is* the running code, so moving the tree is the whole update. It also
+produces `.venv/bin/jiezhi` from the console script in `pyproject.toml`, which
+is what the menu entry runs and what an update restarts.
+
+Override `JIEZHI_HOME`, `JIEZHI_REPO` or `JIEZHI_BRANCH` to install elsewhere.
+`--uninstall` removes the checkout and the menu entry, keeping your data.
+
+## Why a checkout and not a bundle
+
+The host is pure Python. It was being packaged with PyInstaller into a 200 MB
+bundle whose only real job was to be an artifact, and an artifact needs somewhere
+to live, which meant a release, which had to be built and uploaded by hand. A
+checkout removes that whole chain: GitHub already serves the code.
+
+The phone client is the exception, since it genuinely has to be compiled and
+needs the Android SDK. See **The phone client** below.
 
 ## What the app does
 
 On first launch a small panel rises into the bottom-right corner and asks
-whether JieZhi should check for a new version each time it starts. It stays
-there until the question is answered, and it carries a **Check for updates**
-button for looking straight away. The answer is remembered in
-`preferences.json` as `auto_update_check`, and can be changed later under
-Settings → Updates.
+whether JieZhi should check for new commits each time it starts. It stays there
+until the question is answered, and carries a **Check for updates** button for
+looking straight away. The answer is `auto_update_check` in `preferences.json`,
+and can be changed later under Settings → Updates.
 
-A check reads `https://api.github.com/repos/kb777only/JieZhi/releases` with no
-token: the repository is public. The list endpoint is used rather than
-`/releases/latest`, which hides pre-releases — every JieZhi release so far is
-an alpha, so hiding them would mean never finding one.
+A check reads `/repos/kb777only/JieZhi/commits/main`, compares the head against
+`git rev-parse HEAD` in the checkout, and asks
+`/repos/kb777only/JieZhi/compare/<installed>...<head>` for what is in between.
+Both are public and unauthenticated.
 
-- **Nothing newer.** A manual check says so in a panel that fades out after a
-  few seconds. A startup check says nothing at all.
-- **Something newer.** A panel says which version is available. Clicking it
-  opens the release's patch notes with **Exit** and **Update** at the bottom.
-  Exit closes the box and leaves JieZhi running.
+- **Nothing new.** A manual check says so in a panel that fades out after a few
+  seconds. A startup check says nothing at all.
+- **New commits.** A panel says how many. Clicking it opens their messages —
+  which read as patch notes because this repository writes them as prose — with
+  **Exit** and **Update** at the bottom. Exit closes the box and leaves JieZhi
+  running.
 
 ## What an update does
 
-The running app is a PyInstaller bundle in `~/.local/opt/jiezhi`, not a
-checkout, so updating means replacing a directory that a live process is
-reading itself out of. The sequence is built so that every step before the last
-one can be abandoned with nothing changed:
+1. `git fetch --prune origin main`. Nothing in the working tree has changed yet,
+   so leaving at this point leaves the installation exactly as it was.
+2. `git reset --hard <head>`.
+3. `pip install -e .`, but only when the commits being taken on actually touched
+   `pyproject.toml` or `requirements.txt`. Most updates skip this and take about
+   a second.
+4. Rewrite the desktop entry, then start `.venv/bin/jiezhi` and exit.
 
-1. Download `JieZhi-<version>-linux-x86_64.tar.gz` from the release into
-   `~/.cache/jiezhi/updates`. Exit during the download and the partial file is
-   removed.
-2. Verify it against the `SHA256SUMS` the release publishes. A release that
-   publishes sums has to produce the one for this file; a checksum that cannot
-   be read stops the update rather than being skipped. A bundle that does not
-   match is discarded and the installation is untouched.
-3. Unpack beside the installation, using tar's `data` filter, which refuses
-   absolute paths, parent traversal and links that leave the directory.
-4. Rename the old bundle to `jiezhi.previous`, move the new one into its place,
-   and rewrite the desktop entry. A failure anywhere in here puts the previous
-   installation back.
-5. Start the new bundle and exit.
+Anything that fails after step 2 resets back to the commit that was installed
+before, so a broken dependency install does not leave a half-updated app.
 
-`jiezhi.previous` is deliberately **not** deleted during the update: the
-process being replaced is still running out of that directory and loads parts
-of itself lazily, so those files have to outlive it. The next launch clears it,
-along with any `.installing` or `.unpack` directory an interrupted update left.
+## What it refuses to do
 
-## What it does not do
+An update moves a checkout with `git reset --hard`, which destroys uncommitted
+work, so it will not run at all when:
 
-- **The phone client is not updated.** Host and Android versions are kept in
-  step by `scripts/release-check.sh`, but an update only replaces the PC
-  bundle. After a version change, reinstall the client from Device setup.
-- **A source checkout cannot update itself.** Running `host/main.py` from a
-  clone, the box says so and offers the release page; use git instead.
-- **A release with no Linux bundle attached cannot be installed.** The app says
-  a version exists and links the release page rather than pretending.
+- **the checkout has uncommitted changes.** The box names the directory and says
+  to commit or discard them. Nothing is touched in the meantime.
+- **the checkout is on another branch.** Updating would move you off your own
+  branch, so it is left alone. This is what makes a development clone safe to
+  point the app at.
+- **the directory is not a git checkout**, is not writable, or has no launcher.
 
-## What a release has to carry
+`scripts/install.sh` follows the same rule when re-run, for the same reason.
 
-An update can only install what `scripts/package.sh` produces and the release
-publishes. For OTA to work, a release needs at least:
+## The phone client
 
-```
-JieZhi-<version>-linux-x86_64.tar.gz
-SHA256SUMS
-```
+An update replaces the PC app only. The phone keeps the client it has until it
+is reinstalled from Device setup, and host and Android versions are kept in step
+by `scripts/release-check.sh`.
 
-The tarball must unpack to a single `JieZhi/` directory containing the `JieZhi`
-executable, which is what `package.sh` already writes.
+Building that client needs the Android SDK, the NDK and a pinned QNN runtime,
+which an installation is not going to have. So CI builds it on every push to
+`main` and `scripts/publish-client.sh` puts it on the `prebuilt` branch as a
+single orphan commit — one file and a `manifest.json` carrying its SHA-256.
+`raw.githubusercontent.com` serves that branch unauthenticated, and
+`updates.fetch_client()` downloads and verifies it when neither a packaged APK
+nor a local Android build is present.
 
-## Version comparison
-
-Tags are compared as versions, not as strings, so `0.7.0` outranks
-`0.7.0-rc.1`, `0.7.0-beta.1` outranks `0.7.0-alpha.9`, and the `0.7.0a1`
-spelling in `pyproject.toml` compares equal to `0.7.0-alpha.1`. A tag that does
-not parse is never treated as newer, so an oddly named tag cannot trigger an
-update.
+The branch is force-pushed each time, so exactly one copy of the APK exists in
+the repository rather than one per build. The publish step fails with the reason
+if the APK ever grows past what a branch can carry, since GitHub refuses a push
+containing a file over 100 MB.

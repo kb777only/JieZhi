@@ -11,43 +11,91 @@ This repository contains the `v0.8.0-alpha.1` source: the native
 Linux host, Android inference client, authenticated USB protocol, model discovery
 and fit recommendations, local document/project context, guarded PC tools, live
 phone telemetry, a saved node canvas, phone-local image/video diffusion, an
-OpenAI-compatible endpoint for third-party apps, in-app updates, tests, build
-scripts, and packaging flow.
+OpenAI-compatible endpoint for third-party apps, in-app updates, tests and build
+scripts.
 
 ![JieZhi sends a local AI model's thoughts from a phone to a desktop through USB](assets/generated/jiezhi-logo-usb-thoughts-v4.png)
 
 **V1 target:** Deepin 25 x86_64 + Xiaomi 15 Ultra, Snapdragon 8 Elite (SM8750),
 16 GB RAM, Android 16. Other phones are not yet validated.
 
-## Install and use
+## Install
 
-1. Download the release assets from GitHub. Verify them with `SHA256SUMS`, then
-   open the versioned `JieZhi-…-Installer.run`, or extract the Linux archive
-   and run `Install-JieZhi.sh`. The GUI installs into `~/.local/opt/jiezhi` and adds
-   JieZhi to the application menu. ADB and the Android APK are included.
-2. Enable USB debugging on the phone, connect a data cable, and accept Android's
+```sh
+curl -fsSL https://raw.githubusercontent.com/kb777only/JieZhi/main/scripts/install.sh | sh
+```
+
+That is the whole install. It clones this repository into `~/.local/opt/jiezhi`,
+builds a virtual environment for it, fetches Android platform-tools, and adds
+JieZhi to your application menu. Nothing needs an administrator password, and
+there is no release to download or checksum by hand.
+
+It needs `git` and Python 3.12 or newer, and takes a few minutes the first time,
+most of it spent fetching PySide6. Run it again whenever you like: re-running is
+an update, and it refuses to touch a checkout with uncommitted changes in it.
+
+To remove it, keeping your conversations and models:
+
+```sh
+sh ~/.local/opt/jiezhi/scripts/install.sh --uninstall
+```
+
+### First run
+
+1. Enable USB debugging on the phone, connect a data cable, and accept Android's
    computer authorization prompt. In **Welcome & device**, select the phone.
-3. Click **Install Android client**. Approve any Xiaomi USB installation prompt.
-4. Click **Connect & pair**, then enter the code shown in JieZhi on the phone.
-5. On Xiaomi, set JieZhi's app battery saver to **No restrictions**. HyperOS was
+2. Click **Install Android client**. Approve any Xiaomi USB installation prompt.
+   If nothing on this machine has built the client, JieZhi downloads the one CI
+   published and checks it against its checksum before sideloading it.
+3. Click **Connect & pair**, then enter the code shown in JieZhi on the phone.
+4. On Xiaomi, set JieZhi's app battery saver to **No restrictions**. HyperOS was
    observed freezing the app in the background even with a foreground service.
-6. In **Phone models**, import a local `.gguf`, select **Hexagon NPU**, and load it.
-7. Open **Chat** and send a message. Use **Diagnostics** to inspect native runtime
+5. In **Phone models**, import a local `.gguf`, select **Hexagon NPU**, and load it.
+6. Open **Chat** and send a message. Use **Diagnostics** to inspect native runtime
    logs. CPU mode is an explicit diagnostic option and is labelled as such.
+
+If Linux reports no USB permissions, **Fix USB access** installs a udev rule for
+the tested Xiaomi USB vendor/product IDs. That is the only step that asks for
+system authentication.
+
+## What it can do
+
+- **Chat with a model running on your phone.** Import a GGUF, load it on the
+  Hexagon NPU, and talk to it from the desktop. Nothing is sent to a cloud
+  provider, and the phone does the inference.
+- **[Use the phone from any other app](#use-the-phone-from-other-apps).** `jiezhi-gateway`
+  serves an OpenAI-compatible endpoint on `127.0.0.1:11435`, so Open WebUI, Jan,
+  AnythingLLM, Continue or Cline can run on the phone's NPU without knowing a
+  phone exists.
+- **[Act on whatever you have selected](#actions-beside-your-cursor).** Select text
+  anywhere on the desktop, or right-click an image, and summarize, explain,
+  translate, continue or rewrite it. Rewriting opens a chooser of preset styles,
+  or sliders that blend them.
+- **[Generate images and video on the phone](#appearance-settings-and-creative-workflows).**
+  The Flow canvas wires prompts, language models and diffusion nodes together,
+  with Absolute Reality and Neodragon running on the NPU.
+- **[Find a model that fits this phone](#the-hook-a-phone-aware-local-model-library).**
+  Discover models reads the phone's SoC, RAM and free storage and ranks GGUF
+  files against it, showing its assumptions rather than a bare score.
+- **It keeps itself up to date.** See below.
 
 ## Staying up to date
 
-JieZhi checks its own GitHub releases. The first launch asks, in a panel that
-slides into the corner, whether it should look for a new version on every start;
-the answer lives under **Settings → Updates**, where there is also a
-**Check for updates** button. When a newer release exists, a panel says so and
-opens its patch notes with **Exit** and **Update**.
+There are no releases to watch. An installation is a git checkout, so JieZhi
+compares the commit it is running against the head of `main` and offers to move
+onto it.
 
-Updating downloads the release's Linux bundle, verifies it against the published
-`SHA256SUMS`, replaces `~/.local/opt/jiezhi` atomically and restarts. Nothing is
-replaced until the download has been verified, so leaving the box at any earlier
-point changes nothing. The phone client is not updated with it: reinstall it from
-**Welcome & device** after a version change. See `docs/updates.md`.
+The first launch asks, in a panel that slides into the corner, whether it should
+check on every start; the answer lives under **Settings → Updates**, next to a
+**Check for updates** button. When there are new commits, a panel says how many,
+and clicking it opens what they say with **Exit** and **Update** at the bottom.
+Update fast-forwards the checkout, reinstalls dependencies if those commits
+touched any, and restarts.
+
+A checkout with uncommitted changes, or one on a branch other than `main`, is
+never moved: the box says why and the Update button stays off. Anything that
+fails after the move puts the previous commit back. See
+[how updates work](docs/updates.md).
 
 ## Appearance, settings and creative workflows
 
@@ -203,8 +251,8 @@ Larger starter model prepared for the same device:
 - SHA-256 `c876f159707a4e4f70e045106c69db15bfc935a4981706fd4f65c6e7ea1e81c5`
 - Source: https://huggingface.co/unsloth/Qwen3-1.7B-GGUF
 
-Model weights are not bundled in the installer. Import models you are entitled
-to use. Selecting NPU requests acceleration; actual offload evidence comes from
+Model weights are never downloaded by the installer. Import models you are
+entitled to use. Selecting NPU requests acceleration; actual offload evidence comes from
 native logs. Tokenization, sampling, and some operations may use the phone CPU.
 
 ## Develop
@@ -223,12 +271,17 @@ python3 -m venv .venv
 sh scripts/build-android.sh
 .venv/bin/python host/main.py
 QT_QPA_PLATFORM=offscreen PYTHONPATH=host .venv/bin/pytest -q tests
-sh scripts/package.sh
 ```
 
-Run `sh scripts/release-check.sh` for the same host and Android checks used before
-cutting a release. The Android build uses a standard debug key in this alpha;
-release downloads are sideloadable evaluation builds, not app-store artifacts.
+A development clone is the same shape as an installation, so it can update
+itself too — though only while it is on `main` and clean, which a clone you are
+working in usually is not.
+
+Run `sh scripts/release-check.sh` for the host and Android checks together. The
+Android build uses a standard debug key in this alpha; the published client is a
+sideloadable evaluation build, not an app-store artifact. Pushing to `main`
+rebuilds it and publishes it to the `prebuilt` branch, which is where an
+installation without the Android SDK gets it from.
 
 The initial developer setup uses `.tools/jdk`, `.tools/gradle-8.13`,
 `.tools/android-sdk`, and `.tools/platform-tools`. Toolchains, binaries, model
@@ -245,13 +298,14 @@ debug signing key: this is a sideloadable proof of concept, not a store release.
 - `host/jiezhi/attachments.py`: local extraction and bounded reference selection.
 - `host/jiezhi/hub.py`: Hub account, model metadata, resumable verified downloads.
 - `host/jiezhi/*_view.py`: attachment and Hub GUI flows.
-- `host/jiezhi/installer.py`: per-user graphical installer and uninstaller.
-- `host/jiezhi/updates.py`: release checks, verified downloads and the atomic bundle swap.
+- `host/jiezhi/updates.py`: the commit check, the fast-forward, and the client fetch.
 - `android/app/src/main/java/dev/jiezhi/client/`: Android UI, foreground service,
   model store, HTTP bridge, and native inference adapter.
 - `docs/protocol.md`: versioned protocol and state behavior.
 - `docs/gateway.md`: third-party endpoint, model naming, queueing and security.
-- `docs/updates.md`: release checks, what an update replaces, and what a release must carry.
+- `docs/updates.md`: what an installation is, and what updating it does.
+- `scripts/install.sh`: the one-line installer, updater and uninstaller.
+- `scripts/publish-client.sh`: puts a built phone client on the `prebuilt` branch.
 - `docs/recommendations.md`: phone-fit scoring, memory, and speed assumptions.
 - `tests/`: host transport/error handling and installation checks.
 
@@ -266,7 +320,9 @@ Phone models reside in Android app-private storage. The phone listens only on
 loopback, forwarded over USB; authenticated endpoints require a random session
 token. Only USB-attached devices are offered by the desktop.
 
-Run the GUI installer again to uninstall the desktop app. Conversations are kept.
+`sh ~/.local/opt/jiezhi/scripts/install.sh --uninstall` removes the app and its
+menu entry. Conversations, models and pairing state are kept; delete
+`~/.local/share/jiezhi` and `~/.cache/jiezhi` to remove those too.
 Remove the Android app through Android settings to remove its private model data.
 The USB rule, if installed, is `/etc/udev/rules.d/70-jiezhi-android.rules`.
 

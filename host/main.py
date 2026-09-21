@@ -27,12 +27,8 @@ def main():
     from jiezhi.client import asset
     app.setWindowIcon(QIcon(str(asset("jiezhi.svg"))))
     app.setOrganizationName("JieZhi")
-    if "--install" in sys.argv:
-        from jiezhi.installer import Installer
-        window = Installer()
-    else:
-        from jiezhi.gui import Window
-        window = Window()
+    from jiezhi.gui import Window
+    window = Window()
     window.show()
     sys.exit(app.exec())
 

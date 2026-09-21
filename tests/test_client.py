@@ -3,7 +3,6 @@ import json
 import struct
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 
 import pytest
 
@@ -93,17 +92,3 @@ def test_credentials_saved_privately(tmp_path):
     path = tmp_path / "state/pairing.json"; save_json(path, {"test": "secret"})
     assert path.stat().st_mode & 0o777 == 0o600
     assert json.loads(path.read_text()) == {"test": "secret"}
-
-
-def test_installer_preserves_bundle_and_supports_update(tmp_path):
-    from jiezhi.installer import install_bundle
-    source = tmp_path / "source"; source.mkdir()
-    (source / "JieZhi").write_text("v1")
-    destination = tmp_path / "install"; desktop = tmp_path / "apps/jiezhi.desktop"
-    install_bundle(source, destination, desktop)
-    assert (destination / "JieZhi").read_text() == "v1"
-    (source / "JieZhi").write_text("v2")
-    install_bundle(source, destination, desktop)
-    assert (destination / "JieZhi").read_text() == "v2"
-    assert not destination.with_name("install.previous").exists()
-    assert str(destination) in desktop.read_text()
