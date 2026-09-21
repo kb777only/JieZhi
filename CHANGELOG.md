@@ -4,6 +4,11 @@ All notable changes to JieZhi are documented here.
 
 ## Unreleased
 
+- Publish the phone client in pieces. The QNN assets put the APK at about
+  123 MB and GitHub will not hold a file over 100 MB, so the first publish run
+  failed outright; it now goes up in 45 MB pieces with a checksum each, and the
+  app joins and verifies them. The build only runs when a push actually changes
+  the client.
 - Install and update from the repository itself. A one-line
   `curl … | sh` puts a git checkout and its own virtual environment in
   `~/.local/opt/jiezhi`, and an update is a fetch and a fast-forward of that

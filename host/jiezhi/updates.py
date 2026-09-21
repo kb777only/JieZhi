@@ -315,6 +315,11 @@ def fetch_client(progress=lambda percent, message: None, base: str = CLIENT_BASE
     expected = str(details.get("sha256") or "").lower()
     if not expected:
         raise RuntimeError("The phone client was published without a checksum, so it was not installed.")
+    # The APK is past the 100 MB a repository will hold in one file, so it is
+    # published in pieces and joined here. A manifest listing none is one piece.
+    parts = list(details.get("parts") or [{"name": name, "sha256": expected, "size": details.get("size")}])
+    total = sum(int(part.get("size") or 0) for part in parts)
+
     cache.mkdir(parents=True, exist_ok=True)
     target = cache / Path(name).name
     if target.is_file() and sha256(target) == expected:
@@ -325,26 +330,39 @@ def fetch_client(progress=lambda percent, message: None, base: str = CLIENT_BASE
     digest = hashlib.sha256()
     written = 0
     try:
-        with session.get(f"{base}/{name}", stream=True, timeout=(10, 120)) as response:
-            if not response.ok:
-                raise RuntimeError(f"The phone client download returned HTTP {response.status_code}.")
-            total = int(response.headers.get("Content-Length") or details.get("size") or 0)
-            with partial.open("wb") as stream:
-                for block in response.iter_content(BLOCK):
-                    written += len(block)
-                    if total and written > total:
-                        raise RuntimeError("The phone client download was larger than published.")
-                    stream.write(block)
-                    digest.update(block)
-                    progress(written * 100 // total if total else 0,
-                             f"Downloading the phone client · {written / 1024 ** 2:.0f} of {total / 1024 ** 2:.0f} MB"
-                             if total else "Downloading the phone client…")
+        with partial.open("wb") as stream:
+            for part in parts:
+                piece = Path(str(part.get("name") or "")).name
+                if not piece:
+                    raise RuntimeError("The phone client manifest is missing a file name.")
+                # Each piece carries its own checksum so a bad one is named
+                # rather than only showing up as a bad APK at the end.
+                so_far = hashlib.sha256()
+                with session.get(f"{base}/{piece}", stream=True, timeout=(10, 120)) as response:
+                    if not response.ok:
+                        raise RuntimeError(f"The phone client download returned HTTP {response.status_code}.")
+                    for block in response.iter_content(BLOCK):
+                        written += len(block)
+                        if total and written > total:
+                            raise RuntimeError("The phone client download was larger than published.")
+                        stream.write(block)
+                        digest.update(block)
+                        so_far.update(block)
+                        progress(written * 100 // total if total else 0,
+                                 f"Downloading the phone client · {written / 1024 ** 2:.0f} of {total / 1024 ** 2:.0f} MB"
+                                 if total else "Downloading the phone client…")
+                wanted = str(part.get("sha256") or "").lower()
+                if wanted and so_far.hexdigest() != wanted:
+                    raise RuntimeError(f"{piece} failed its checksum, so the phone client was discarded.")
     except requests.RequestException:
         partial.unlink(missing_ok=True)
         raise RuntimeError("The phone client download was interrupted. Try again.") from None
     except BaseException:
         partial.unlink(missing_ok=True)
         raise
+    if total and written != total:
+        partial.unlink(missing_ok=True)
+        raise RuntimeError("The phone client download was cut short. Try again.")
     if digest.hexdigest() != expected:
         partial.unlink(missing_ok=True)
         raise RuntimeError("The phone client failed its checksum and was discarded.")

@@ -210,18 +210,33 @@ def test_desktop_entry_points_at_the_checkout(tmp_path):
 def prebuilt(tmp_path):
     """The branch CI publishes the phone client to, and its manifest."""
     payload = b"PK\x03\x04" + b"apk" * 5000
-    state = {"apk": payload, "manifest": None}
-    state["manifest"] = json.dumps({
-        "version": "0.8.0-alpha.1", "commit": "a" * 40, "name": "jiezhi-client.apk",
-        "sha256": hashlib.sha256(payload).hexdigest(), "size": len(payload),
-    }).encode()
+    state = {"apk": payload, "manifest": None, "pieces": {}}
+
+    def publish():
+        """Split the APK the way scripts/publish-client.sh does."""
+        apk = state["apk"]
+        step = 4096
+        cuts = [apk[at:at + step] for at in range(0, len(apk), step)]
+        state["pieces"] = {f"jiezhi-client.apk.{n:03d}": cut for n, cut in enumerate(cuts)}
+        state["manifest"] = json.dumps({
+            "version": "0.8.0-alpha.1", "commit": "a" * 40, "name": "jiezhi-client.apk",
+            "sha256": hashlib.sha256(apk).hexdigest(), "size": len(apk),
+            "parts": [{"name": name, "sha256": hashlib.sha256(cut).hexdigest(), "size": len(cut)}
+                      for name, cut in state["pieces"].items()],
+        }).encode()
+
+    publish()
+    state["publish"] = publish
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
 
         def do_GET(self):
-            body = state["manifest"] if self.path.endswith("manifest.json") else state["apk"]
+            if self.path.endswith("manifest.json"):
+                body = state["manifest"]
+            else:
+                body = state["pieces"].get(self.path.lstrip("/"))
             status = 404 if body is None else 200
             body = body or b""
             self.send_response(status)
@@ -241,18 +256,44 @@ def prebuilt(tmp_path):
     thread.join()
 
 
-def test_phone_client_is_fetched_and_verified(prebuilt, tmp_path):
+def test_phone_client_is_joined_from_its_pieces_and_verified(prebuilt, tmp_path):
     base, state = prebuilt
+    # The APK is past the 100 MB a repository holds in one file, so it arrives
+    # in pieces and has to come back out as the file that was published.
+    assert len(state["pieces"]) > 1
     apk = fetch_client(base=base, cache=tmp_path / "cache")
     assert apk.read_bytes() == state["apk"]
     # A second call is served from the cache rather than downloaded again.
     assert fetch_client(base=base, cache=tmp_path / "cache") == apk
 
-    apk.unlink()
-    state["apk"] = state["apk"][:-1] + b"X"
-    with pytest.raises(RuntimeError, match="checksum"):
+
+def test_a_bad_piece_is_named_and_the_client_discarded(prebuilt, tmp_path):
+    base, state = prebuilt
+    spoiled = sorted(state["pieces"])[1]
+    state["pieces"][spoiled] = b"\x00" + state["pieces"][spoiled][1:]
+    with pytest.raises(RuntimeError, match=f"{spoiled} failed its checksum"):
+        fetch_client(base=base, cache=tmp_path / "cache")
+    assert not list((tmp_path / "cache").glob("*"))
+
+
+def test_a_client_that_does_not_match_its_manifest_is_discarded(prebuilt, tmp_path):
+    base, state = prebuilt
+    # Every piece is intact but the whole is not what was published.
+    state["manifest"] = state["manifest"].replace(
+        hashlib.sha256(state["apk"]).hexdigest().encode(), b"f" * 64, 1)
+    with pytest.raises(RuntimeError, match="The phone client failed its checksum"):
         fetch_client(base=base, cache=tmp_path / "cache")
     assert not list((tmp_path / "cache").glob("*.partial"))
+
+
+def test_a_manifest_without_pieces_is_one_piece(prebuilt, tmp_path):
+    base, state = prebuilt
+    state["pieces"] = {"jiezhi-client.apk": state["apk"]}
+    state["manifest"] = json.dumps({
+        "name": "jiezhi-client.apk", "sha256": hashlib.sha256(state["apk"]).hexdigest(),
+        "size": len(state["apk"]),
+    }).encode()
+    assert fetch_client(base=base, cache=tmp_path / "cache").read_bytes() == state["apk"]
 
 
 def test_no_published_client_says_how_to_build_one(prebuilt, tmp_path):
