@@ -8,23 +8,28 @@ from .pc_tools import sensitive
 
 class ProjectView:
     def build_projects(self):
-        from .gui import button,label
+        from .gui import button,label,row,wide,EmptyList,card
         self.project_store=Projects(); self.active_project=None
         layout=self.page('Room for your next idea.', 'One workspace for conversations, documents, folders and shared context.')
         split=QSplitter(Qt.Orientation.Horizontal)
-        left=QWidget();rail=QVBoxLayout(left);rail.setContentsMargins(0,0,10,0)
+        left=QWidget();rail=QVBoxLayout(left);rail.setContentsMargins(0,0,0,0);rail.setSpacing(8)
         rail.addWidget(button('＋ New project',self.create_project,True))
-        self.project_list=QListWidget();self.project_list.setMinimumWidth(205);self.project_list.itemClicked.connect(self.show_project);rail.addWidget(self.project_list,1)
-        rail.addWidget(button('Open project chat',self.use_project));rail.addWidget(button('Return to personal chat',self.leave_project));split.addWidget(left)
-        right=QWidget();detail=QVBoxLayout(right);detail.setContentsMargins(12,0,0,0);detail.setSpacing(14)
-        self.project_title=label('Select a project to begin.','badge',True);detail.addWidget(self.project_title)
-        self.project_notes=QPlainTextEdit();self.project_notes.setPlaceholderText('What are you working toward? Add shared instructions…');self.project_notes.setMinimumHeight(110);self.project_notes.setMaximumHeight(150);detail.addWidget(self.project_notes)
-        row=QHBoxLayout();row.addWidget(button('Save instructions',self.save_project_notes));row.addStretch();row.addWidget(button('Link folder…',self.link_project_folder));row.addWidget(button('Add files…',self.project_add_files));detail.addLayout(row)
-        detail.addWidget(label('REFERENCE LIBRARY','muted'))
-        self.project_files=QListWidget();detail.addWidget(self.project_files,1)
-        row=QHBoxLayout();row.addWidget(button('Attach to chat',self.project_attach_selected));row.addWidget(button('Remove reference',self.remove_project_reference));row.addWidget(button('Refresh folders',self.refresh_project_index));detail.addLayout(row)
-        detail.addWidget(label('Original files stay in place. Linked folders also define this project’s PC Assistant scope.','muted',True))
-        split.addWidget(right);split.setSizes([230,750]);layout.addWidget(split,1);self.reload_projects()
+        self.project_list=EmptyList('No projects yet. A project keeps its own chats, folders and instructions together.')
+        self.project_list.setMinimumWidth(205);self.project_list.itemClicked.connect(self.show_project);rail.addWidget(self.project_list,1)
+        rail.addWidget(button('Open project chat',self.use_project));rail.addWidget(button('Return to personal chat',self.leave_project,kind='quiet'));split.addWidget(left)
+        right=QWidget();detail=QVBoxLayout(right);detail.setContentsMargins(0,0,0,0);detail.setSpacing(16)
+        self.project_title=label('Select a project to begin.','badge');detail.addWidget(self.project_title,0,Qt.AlignmentFlag.AlignLeft)
+        self.project_notes=QPlainTextEdit();self.project_notes.setPlaceholderText('What are you working toward? Add shared instructions…');self.project_notes.setMinimumHeight(96);self.project_notes.setMaximumHeight(130);detail.addWidget(self.project_notes)
+        detail.addLayout(row(button('Link folder…',self.link_project_folder),button('Add files…',self.project_add_files),
+                             trailing=(button('Save instructions',self.save_project_notes,True),)))
+        detail.addWidget(label('REFERENCE LIBRARY','section'))
+        self.project_files=EmptyList('Link a folder or add files, and they show up here for this project’s chats.')
+        detail.addWidget(self.project_files,1)
+        detail.addLayout(row(button('Refresh folders',self.refresh_project_index,kind='quiet'),
+                             button('Remove reference',self.remove_project_reference,kind='quiet'),
+                             trailing=(button('Attach to chat',self.project_attach_selected),)))
+        detail.addWidget(label('Original files stay in place. Linked folders also define this project’s PC Assistant scope.','fine',True))
+        split.addWidget(right);split.setSizes([260,860]);layout.addWidget(split,1);self.reload_projects()
     def reload_projects(self):
         self.project_list.clear()
         for project in self.project_store.all():

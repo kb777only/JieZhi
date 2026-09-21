@@ -114,22 +114,34 @@ class FlowCanvas(QGraphicsView):
 class WorkflowView:
     def build_workflows(self):
         from .gui import label,button,DATA
+        from .gui import row as controls
         self.flow_path=DATA/'workflows'/'draft.json';self.flow_cancel=threading.Event();self.flow_active=False;self.flow_media_models=[];self.flow_last_dir=None
         self.flow_timer=QTimer(self);self.flow_timer.setSingleShot(True);self.flow_timer.setInterval(450);self.flow_timer.timeout.connect(self.save_flow_draft)
         layout=self.page('Connect ideas. Create something.', 'Chain prompts, phone models and generated media. Drag from an output dot to an input dot.')
-        row=QHBoxLayout()
-        for kind,title in KINDS.items():row.addWidget(button('＋ '+title,lambda checked=False,k=kind:self.flow_add(k)))
-        layout.addLayout(row)
+        layout.addLayout(controls(label('ADD A NODE','section'),
+                                  *[button('＋ '+title,lambda checked=False,k=kind:self.flow_add(k))
+                                    for kind,title in KINDS.items()], spacing=8))
         split=QSplitter(Qt.Orientation.Horizontal);self.flow_canvas=FlowCanvas(lambda:self.flow_timer.start());split.addWidget(self.flow_canvas)
         inspector=QWidget();ins=QVBoxLayout(inspector);ins.setContentsMargins(14,0,0,0);inspector.setMinimumWidth(270);inspector.setMaximumWidth(320)
-        ins.addWidget(label('NODE SETTINGS','muted'));scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QScrollArea.Shape.NoFrame);self.flow_form_body=QWidget();self.flow_form=QFormLayout(self.flow_form_body);scroll.setWidget(self.flow_form_body);ins.addWidget(scroll,1)
-        ins.addWidget(button('Apply parameters',self.flow_apply));ins.addWidget(button('Remove selected node / wire',self.flow_delete));split.addWidget(inspector);split.setSizes([800,280]);layout.addWidget(split,1)
-        row=QHBoxLayout();row.addWidget(button('Fit canvas',self.flow_canvas.fit));row.addWidget(button('Save as…',self.flow_export));row.addWidget(button('Open flow…',self.flow_import));row.addWidget(button('Refresh phone models',self.flow_refresh_models));row.addWidget(button('Import media weights…',self.flow_import_media));layout.addLayout(row)
-        row=QHBoxLayout();row.addWidget(button('Get starter media models…',self.flow_get_starter));row.addWidget(label('NPU: Absolute Reality · Neodragon video  /  CPU: SD 1.5 · Wan','muted'));row.addStretch();layout.addLayout(row)
-        row=QHBoxLayout();self.flow_log=QPlainTextEdit();self.flow_log.setReadOnly(True);self.flow_log.setMaximumHeight(100);self.flow_log.setPlaceholderText('Select a node to configure it. Ctrl+wheel to zoom · middle-drag to pan.');row.addWidget(self.flow_log,1)
-        self.flow_preview=QLabel();self.flow_preview.setFixedSize(130,100);self.flow_preview.setAlignment(Qt.AlignmentFlag.AlignCenter);self.flow_preview.hide();row.addWidget(self.flow_preview);self.flow_output_file=None
-        self.flow_open_result=button('Open result ↗',self.flow_open_result_file);self.flow_open_result.hide();row.addWidget(self.flow_open_result);layout.addLayout(row)
-        row=QHBoxLayout();self.flow_state=label('Draft saved locally · only Run starts inference','muted',True);row.addWidget(self.flow_state,1);row.addWidget(button('Open outputs',self.flow_open_outputs));self.flow_stop=button('Stop',self.flow_stop_run);self.flow_stop.setEnabled(False);row.addWidget(self.flow_stop);self.flow_run_button=button('Run flow',self.flow_run,True);row.addWidget(self.flow_run_button);layout.addLayout(row)
+        ins.addWidget(label('NODE SETTINGS','section'));scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QScrollArea.Shape.NoFrame);self.flow_form_body=QWidget();self.flow_form=QFormLayout(self.flow_form_body);scroll.setWidget(self.flow_form_body);ins.addWidget(scroll,1)
+        ins.addWidget(button('Apply parameters',self.flow_apply,True));ins.addWidget(button('Remove selected node or wire',self.flow_delete,kind='danger'));split.addWidget(inspector);split.setSizes([800,280]);layout.addWidget(split,1)
+        layout.addLayout(controls(button('Fit canvas',self.flow_canvas.fit,kind='quiet'),
+                                  button('Save as…',self.flow_export,kind='quiet'),
+                                  button('Open flow…',self.flow_import,kind='quiet'),
+                                  trailing=(button('Refresh phone models',self.flow_refresh_models,kind='quiet'),
+                                            button('Import media weights…',self.flow_import_media,kind='quiet'),
+                                            button('Get starter media models…',self.flow_get_starter,kind='quiet'))))
+        layout.addWidget(label('NPU: Absolute Reality · Neodragon video  /  CPU: SD 1.5 · Wan','fine'))
+        self.flow_log=QPlainTextEdit();self.flow_log.setObjectName('console');self.flow_log.setReadOnly(True);self.flow_log.setMaximumHeight(96)
+        self.flow_log.setPlaceholderText('Select a node to configure it. Ctrl+wheel to zoom · middle-drag to pan.')
+        self.flow_preview=QLabel();self.flow_preview.setFixedSize(130,96);self.flow_preview.setAlignment(Qt.AlignmentFlag.AlignCenter);self.flow_preview.hide();self.flow_output_file=None
+        self.flow_open_result=button('Open result ↗',self.flow_open_result_file,kind='quiet');self.flow_open_result.hide()
+        layout.addLayout(controls((self.flow_log,1),self.flow_preview,trailing=(self.flow_open_result,)))
+        self.flow_state=label('Draft saved locally · only Run starts inference','fine',True)
+        self.flow_stop=button('Stop',self.flow_stop_run);self.flow_stop.setEnabled(False)
+        self.flow_run_button=button('Run flow',self.flow_run,True)
+        layout.addLayout(controls((self.flow_state,1),trailing=(button('Open outputs',self.flow_open_outputs,kind='quiet'),
+                                                               self.flow_stop,self.flow_run_button)))
         graph=read_json(self.flow_path,{})
         try:validate(graph)
         except Exception:

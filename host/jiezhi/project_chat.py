@@ -18,7 +18,7 @@ class ProjectChatView:
         self.project_access.setCurrentIndex(1)
         self.project_access.currentIndexChanged.connect(self.project_mode_changed)
         row.addWidget(label('Project file access','muted'));row.addWidget(self.project_access)
-        row.addWidget(button('Open folder',self.open_project_folder));row.addStretch()
+        row.addWidget(button('Open folder',self.open_project_folder,kind='quiet'));row.addStretch()
         self.project_controls.hide();layout.addWidget(self.project_controls)
 
     def project_mode_changed(self):
@@ -28,6 +28,9 @@ class ProjectChatView:
     def refresh_project_chat_controls(self):
         project=getattr(self,'active_project',None)
         self.project_controls.setVisible(bool(project))
+        # Off a project there is nothing to say, so the line goes rather than
+        # sitting under every page title repeating "No project".
+        self.project_badge.setVisible(bool(project))
         if project:
             self.project_badge.setText('Project · '+project['name']+'\n'+(' · '.join(project.get('folders',[])) or 'A local project folder will be created when you send a message.'))
         else:self.project_badge.setText('Personal conversation · No project')
