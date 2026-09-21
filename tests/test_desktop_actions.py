@@ -142,3 +142,45 @@ def test_rewrite_style_shapes_the_prompt_and_is_remembered(qtbot,tmp_path,monkey
     assert w.preferences['rewrite_style_weights']['professionalism']==10
     assert 'Professional' in w.quick_result.title.text()
     w.quick_result.close();w.close()
+
+
+def press(p,cursor,monkeypatch,mask=1<<8):
+    """One poll that sees the left button newly down, with the pointer sampled at cursor."""
+    class Pointer:
+        def state(self):return (0,0,mask)
+        def close(self):pass
+    monkeypatch.setattr(popup.QCursor,'pos',staticmethod(lambda:cursor))
+    p.pointer=Pointer();p.previous_mask=0;p.poll()
+
+
+def test_a_press_at_the_chip_edge_does_not_swallow_the_click(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
+    p.offer({'kind':'text','text':'Selected passage'},QPoint(400,200))
+    box=p.chip.geometry()
+    press(p,QPoint(box.center().x(),box.bottom()+2),monkeypatch)
+    assert p.chip.isVisible()
+    p.chip.click();assert p.menu.isVisible()
+    w.close()
+
+
+def test_a_press_away_from_the_chip_still_dismisses_it(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
+    p.offer({'kind':'text','text':'Selected passage'},QPoint(400,200))
+    box=p.chip.geometry()
+    press(p,QPoint(box.center().x(),box.bottom()+140),monkeypatch)
+    assert not p.chip.isVisible()
+    w.close()
+
+
+def test_hover_survives_a_pixel_of_drift(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
+    class Pointer:
+        def state(self):return (0,0,0)
+        def close(self):pass
+    p.pointer=Pointer();clock=[100.0];monkeypatch.setattr(popup.time,'monotonic',lambda:clock[0])
+    p.offer({'kind':'text','text':'Selected passage'},QPoint(400,200))
+    box=p.chip.geometry()
+    monkeypatch.setattr(popup.QCursor,'pos',staticmethod(lambda:QPoint(box.center().x(),box.bottom()+2)))
+    p.poll();clock[0]+=.4;p.poll()
+    assert p.menu.isVisible()
+    w.close()

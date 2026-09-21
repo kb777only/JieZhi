@@ -12,6 +12,8 @@ CHIP_SIZE=QSize(40,26)
 CHIP_ICON=QSize(18,18)
 CHIP_STYLE='QPushButton#chip {padding:0;border-radius:8px;}'
 CHIP_FADE=140
+CLICK_SLACK=6
+MENU_SLACK=40
 
 TEXT_ACTIONS={'summarize':'Summarize','rewrite':'Rewrite','continue':'Continue writing','explain':'Explain','translate':'Translate','generate':'Generate as an image'}
 IMAGE_ACTIONS={'rework':'Rework image','upscale':'Upscale 2×','expand':'Expand image','variations':'Create a variation'}
@@ -20,6 +22,10 @@ IMAGE_ACTIONS={'rework':'Rework image','upscale':'Upscale 2×','expand':'Expand 
 def place(widget,anchor):
     screen=QApplication.screenAt(anchor) or QApplication.primaryScreen();r=screen.availableGeometry()
     widget.move(max(r.left(),min(anchor.x()+18,r.right()-widget.width())),max(r.top(),min(anchor.y()+18,r.bottom()-widget.height())))
+
+
+def near(widget,cursor,pad):
+    return widget.isVisible() and widget.geometry().adjusted(-pad,-pad,pad,pad).contains(cursor)
 
 
 def floating(widget,passive=False):
@@ -149,6 +155,13 @@ class DesktopPopup:
             except Exception:enabled=False
         if enabled:self.timer.start()
         else:self.timer.stop();self.settle.stop();self.hide()
+    def mine(self,cursor,pad=CLICK_SLACK):
+        """Is the pointer on our own chip or menu? Qt is asked first, then the geometry
+        with a little slack: a press is seen up to one poll late, and by then the pointer
+        can have drifted off a 40x26 chip. Dismissing on that sample swallowed the click."""
+        widget=QApplication.widgetAt(cursor)
+        if widget is not None and widget.window() in (self.chip,self.menu):return True
+        return near(self.chip,cursor,pad) or near(self.menu,cursor,pad)
     def hide(self):self.fade.stop();self.chip.hide();self.menu.hide();self.hover_since=None;self.menu_left=None;self.context=None
     def selection_changed(self):
         if self.timer.isActive() and not QApplication.clipboard().ownsSelection():self.settle.start()
@@ -176,14 +189,14 @@ class DesktopPopup:
             own=QApplication.widgetAt(cursor)
             if not own:self.right_click(cursor,state[:2])
         if mask & (1<<8) and not self.previous_mask & (1<<8):
-            if not self.menu.geometry().contains(cursor) and not self.chip.geometry().contains(cursor):self.hide()
+            if not self.mine(cursor):self.hide()
         self.previous_mask=mask
         if self.menu.isVisible():
-            if self.menu.geometry().adjusted(-40,-40,40,40).contains(cursor) or self.chip.geometry().adjusted(-40,-40,40,40).contains(cursor):self.menu_left=None
+            if self.mine(cursor,MENU_SLACK):self.menu_left=None
             elif self.menu_left is None:self.menu_left=time.monotonic()
             elif time.monotonic()-self.menu_left>=.9:self.hide()
         if self.chip.isVisible() and not self.menu.isVisible():
-            if self.chip.geometry().contains(cursor):
+            if near(self.chip,cursor,CLICK_SLACK):
                 if self.hover_since is None:self.hover_since=time.monotonic()
                 elif time.monotonic()-self.hover_since>=.350:self.expand()
             else:self.hover_since=None
