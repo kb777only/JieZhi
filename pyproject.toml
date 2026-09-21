@@ -23,6 +23,7 @@ dev = ["pytest>=9.0,<10", "pytest-qt>=4.5,<5", "pyinstaller>=6.0,<7"]
 
 [project.scripts]
 jiezhi = "main:main"
+jiezhi-gateway = "jiezhi.gateway:main"
 
 [tool.setuptools]
 package-dir = {"" = "host"}

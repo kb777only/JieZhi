@@ -2,6 +2,15 @@
 
 All notable changes to JieZhi are documented here.
 
+## Unreleased
+
+- Add an OpenAI-compatible endpoint (`jiezhi-gateway`) so third-party AI workspaces
+  can use the phone's NPU: model listing, streamed and whole chat completions,
+  legacy completions, on-demand model loading and per-phone request queueing.
+  Loopback-only, with Host checking and an optional API key.
+- Add a device registry that tracks each attached phone's identity, Hexagon
+  capability and connection state, with one client per phone.
+
 ## 0.6.0-alpha.1 — 2026-09-20
 
 - Add X11 selection/right-click popups with 350 ms hover, per-action model settings,
