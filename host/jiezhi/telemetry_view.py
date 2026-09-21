@@ -5,20 +5,22 @@ from PySide6.QtCore import Qt,QThread,QTimer,QRectF,QPointF,Signal
 from PySide6.QtGui import QColor,QPainter,QPainterPath,QPen
 from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QDialog,QPlainTextEdit
 from .telemetry import Collector,number
+from .theme import XS,SM,MD,LG,LABEL,CAPTION,SMALL,HEADING,R_INPUT,R_PANEL,tokens
 
 
 class Sparkline(QWidget):
     def __init__(self,color,ceiling=None,parent=None):
         super().__init__(parent);self.points=deque(maxlen=180);self.color=QColor(color);self.ceiling=ceiling
-        self.setMinimumHeight(26);self.setMaximumHeight(38)
+        self.dark=False;self.setMinimumHeight(26);self.setMaximumHeight(38)
     def add(self,at,value):self.points.append((at,value));self.update()
     def paintEvent(self,event):
         p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect=QRectF(2,2,max(1,self.width()-4),max(1,self.height()-4))
-        p.setPen(QPen(QColor('#e4eaf4'),1));p.drawLine(rect.bottomLeft(),rect.bottomRight())
+        t=tokens(self.dark)
+        p.setPen(QPen(QColor(t['line']),1));p.drawLine(rect.bottomLeft(),rect.bottomRight())
         valid=[v for _,v in self.points if v is not None and math.isfinite(v)]
         if not self.points or not valid:
-            p.setPen(QColor('#98a4b8'));p.drawText(rect,Qt.AlignmentFlag.AlignCenter,'No data');return
+            p.setPen(QColor(t['ink_3']));p.drawText(rect,Qt.AlignmentFlag.AlignCenter,'No data');return
         end=self.points[-1][0];start=end-120
         hi=self.ceiling or max(1,max(valid)*1.12);lo=0
         path=QPainterPath();drawing=False
@@ -34,11 +36,11 @@ class Sparkline(QWidget):
 class MetricCard(QWidget):
     def __init__(self,title,color,unit='',ceiling=None):
         super().__init__();self.unit=unit;self.setObjectName('telemetryCard');self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground,True)
-        col=QVBoxLayout(self);col.setContentsMargins(9,6,9,5);col.setSpacing(1)
-        self.title=QLabel(title);self.title.setStyleSheet('font-size:11px;color:#6d7b92;background:transparent;');col.addWidget(self.title)
-        self.value=QLabel('—');self.value.setStyleSheet(f'font-size:19px;font-weight:600;color:{color};background:transparent;');col.addWidget(self.value)
+        col=QVBoxLayout(self);col.setContentsMargins(SM,SM,SM,SM);col.setSpacing(1)
+        self.title=QLabel(title);self.title.setStyleSheet(f'font-size:{LABEL}px;color:#6d7b92;background:transparent;');col.addWidget(self.title)
+        self.value=QLabel('—');self.value.setStyleSheet(f'font-size:{HEADING}px;font-weight:600;color:{color};background:transparent;');col.addWidget(self.value)
         self.chart=Sparkline(color,ceiling);col.addWidget(self.chart)
-        self.note=QLabel('Disconnected');self.note.setStyleSheet('font-size:10px;color:#8591a7;background:transparent;');col.addWidget(self.note)
+        self.note=QLabel('Disconnected');self.note.setStyleSheet(f'font-size:{LABEL}px;color:#8591a7;background:transparent;');col.addWidget(self.note)
     def sample(self,at,value,reason,note=''):
         self.chart.add(at,value);self.value.setText(f'{value:.1f}{self.unit}' if value is not None else '—')
         self.note.setText(note or ('Live' if value is not None else 'Unavailable'));self.setToolTip(reason)
@@ -53,26 +55,71 @@ class TelemetryWorker(QThread):
 
 
 class TelemetryPanel(QWidget):
+    """One line of live values, with the graphs a click away.
+
+    The eight cards were on every screen at full height; most of the time the
+    numbers are all that is wanted, and the page needs the room more.
+    """
+
+    KEYS=[('tokens','LIVE ≈ TOK/S','#3a5fe0','',None),('battery','BATTERY','#1f7a63','%',100),
+          ('battery_temp','BATTERY TEMP','#b4722a','°C',70),('soc_temp','SOC · CPU PEAK','#bd4630','°C',110),
+          ('cpu','CPU LOAD','#5566d6','%',100),('gpu','GPU LOAD','#7d58c9','%',100),
+          ('npu','NPU LOAD','#a05aaf','%',100),('memory','RAM USED','#2b7b9b',' GiB',None)]
+    SUMMARY=[('tokens','tok/s'),('battery','%'),('soc_temp','°C'),('memory',' GiB')]
+
     def __init__(self,client,parent=None):
         super().__init__(parent);self.client=client;self.collector=Collector();self.worker=None;self.last=None;self.target=None;self.closed=False
-        self.setObjectName('telemetryPanel');self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground,True);self.setStyleSheet('QWidget#telemetryPanel {background:#eaf0fc;border-radius:14px;} QWidget#telemetryCard {background:white;border-radius:10px;}')
-        outer=QVBoxLayout(self);outer.setContentsMargins(10,6,10,7);outer.setSpacing(4)
-        head=QHBoxLayout();self.status=QLabel('PHONE TELEMETRY · Connect a phone');self.status.setStyleSheet('color:#6d7b92;font-size:11px;background:transparent;');head.addWidget(self.status,1)
-        self.details=QPushButton('Sensor details');self.details.setStyleSheet('font-size:10px;padding:2px 8px;border-radius:6px;');self.details.clicked.connect(self.show_details);head.addWidget(self.details);outer.addLayout(head)
-        row=QHBoxLayout();row.setSpacing(6);self.cards={}
-        for key,title,color,unit,ceiling in [
-            ('tokens','LIVE ≈ TOK/S','#386bff','',None),('battery','BATTERY','#2b9b82','%',100),
-            ('battery_temp','BATTERY TEMP','#e28b3c','°C',70),('soc_temp','SOC · CPU PEAK','#e36b63','°C',110),
-            ('cpu','CPU LOAD','#6b7de0','%',100),('gpu','GPU LOAD','#8b67d9','%',100),
-            ('npu','NPU LOAD','#ae6dba','%',100),('memory','RAM USED','#368baa',' GiB',None)]:
+        self.dark=False
+        self.setObjectName('telemetryPanel');self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground,True)
+        outer=QVBoxLayout(self);outer.setContentsMargins(MD,SM,MD,SM);outer.setSpacing(SM)
+        head=QHBoxLayout();head.setSpacing(MD)
+        self.status=QLabel('PHONE TELEMETRY · Connect a phone');head.addWidget(self.status)
+        self.summary=QLabel('—');head.addWidget(self.summary)
+        head.addStretch(1)
+        self.expand=QPushButton('Show graphs');self.expand.setObjectName('quiet')
+        self.expand.setCursor(Qt.CursorShape.PointingHandCursor);self.expand.clicked.connect(self.toggle)
+        head.addWidget(self.expand)
+        self.details=QPushButton('Sensor details');self.details.setObjectName('quiet')
+        self.details.setCursor(Qt.CursorShape.PointingHandCursor);self.details.clicked.connect(self.show_details)
+        head.addWidget(self.details);outer.addLayout(head)
+        self.graphs=QWidget();self.graphs.setAttribute(Qt.WidgetAttribute.WA_StyledBackground,True)
+        row=QHBoxLayout(self.graphs);row.setContentsMargins(0,0,0,XS);row.setSpacing(SM);self.cards={}
+        for key,title,color,unit,ceiling in self.KEYS:
             card=MetricCard(title,color,unit,ceiling);self.cards[key]=card;row.addWidget(card,1)
-        outer.addLayout(row)
+        outer.addWidget(self.graphs)
+        self.graphs.setVisible(bool(getattr(parent,'preferences',{}).get('telemetry_graphs',False)))
+        self.expand.setText('Hide graphs' if self.graphs.isVisible() else 'Show graphs')
         self.timer=QTimer(self);self.timer.setInterval(1000);self.timer.timeout.connect(self.poll);self.timer.start()
+
+    def toggle(self):
+        show=not self.graphs.isVisible()
+        self.graphs.setVisible(show);self.expand.setText('Hide graphs' if show else 'Show graphs')
+        window=self.window()
+        if hasattr(window,'preferences'):
+            window.preferences['telemetry_graphs']=show
+            from .client import save_json
+            save_json(window.preferences_path,window.preferences)
+
+    def write_summary(self,sample):
+        if not sample:
+            self.summary.setText('—');return
+        parts=[]
+        for key,unit in self.SUMMARY:
+            value=sample['values'][key]
+            parts.append('—' if value is None else f'{value:.1f}{unit}')
+        self.summary.setText('  ·  '.join(parts))
+
     def set_theme(self,dark):
-        self.setStyleSheet('QWidget#telemetryPanel {background:'+('#191f32' if dark else '#eaf0fc')+';border-radius:14px;} QWidget#telemetryCard {background:'+('#222c43' if dark else 'white')+';border-radius:10px;}')
+        self.dark=dark;t=tokens(dark)
+        self.setStyleSheet(
+            f'QWidget#telemetryPanel {{background:{t["panel"]};border-radius:{R_PANEL}px;}}'
+            f'QWidget#telemetryCard {{background:{t["surface"]};border:1px solid {t["line"]};border-radius:{R_INPUT}px;}}')
+        self.status.setStyleSheet(f'color:{t["ink_3"]};font-size:{LABEL}px;background:transparent;letter-spacing:1px;')
+        self.summary.setStyleSheet(f'color:{t["ink"]};font-size:{SMALL}px;font-weight:600;background:transparent;')
         for card in self.cards.values():
-            card.title.setStyleSheet('font-size:10px;color:'+('#b2bfd5' if dark else '#6d7b92')+';background:transparent;')
-            card.note.setStyleSheet('font-size:10px;color:'+('#a4b4cf' if dark else '#8591a7')+';background:transparent;')
+            card.title.setStyleSheet(f'font-size:{LABEL}px;color:{t["ink_3"]};background:transparent;')
+            card.note.setStyleSheet(f'font-size:{LABEL}px;color:{t["ink_3"]};background:transparent;')
+            card.chart.dark=dark;card.chart.update()
     
     def poll(self):
         if self.closed:return
@@ -103,10 +150,12 @@ class TelemetryPanel(QWidget):
             elif key=='npu' and value is None:note='Not exposed'
             elif key=='soc_temp' and value is not None:note='Hottest CPU sensor'
             card.sample(sample['at'],value,sample['reasons'][key],note)
+        self.write_summary(sample)
         state=sample['notice'] or app.get('state','Connected')
-        self.status.setText(f'PHONE TELEMETRY · {state} · 2-minute history · 1s refresh / hardware 2s')
+        self.status.setText(f'PHONE TELEMETRY · {state}')
+        self.setToolTip('2-minute history · refreshed every second, hardware counters every two')
     def unavailable(self,reason):
-        self.last=None;self.status.setText('PHONE TELEMETRY · '+reason)
+        self.last=None;self.status.setText('PHONE TELEMETRY · '+reason);self.write_summary(None)
         for card in self.cards.values():card.sample(time.monotonic(),None,reason,'Disconnected' if 'Disconnected' in reason else 'Unavailable')
     def show_details(self):
         dialog=QDialog(self);dialog.setWindowTitle('Phone telemetry · sources and availability');dialog.resize(780,580)

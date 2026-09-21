@@ -43,25 +43,38 @@ class AssistantWorker(QThread):
 
 class AssistantView:
     def build_assistant(self):
-        from .gui import button,label
+        from .gui import button,label,row,wide,EmptyList,card
         self.pc_worker=None;self.approval_dialog=None;self.pending_approval=None
         settings=read_json(DATA/'assistant-settings.json',{})
         layout=self.page('Your PC, with a helping hand.', 'Investigate crashes, inspect your system and review proposed repairs. Reasoning runs on your phone; approved tools run on this PC.')
-        row=QHBoxLayout();row.addWidget(label('Access mode'))
         self.access_mode=QComboBox()
         for key,title in MODES.items():self.access_mode.addItem(title,key)
-        self.access_mode.setCurrentIndex(max(0,self.access_mode.findData(settings.get('mode','confirm'))));row.addWidget(self.access_mode)
-        self.allow_admin=QCheckBox('Allow administrator requests');self.allow_admin.setChecked(False);row.addWidget(self.allow_admin);row.addStretch();layout.addLayout(row)
-        self.pc_mode_note=label('','muted',True);layout.addWidget(self.pc_mode_note)
-        self.pc_roots=QListWidget();self.pc_roots.setMaximumHeight(75);self.pc_roots.addItems(settings.get('roots',[]));layout.addWidget(self.pc_roots)
-        row=QHBoxLayout();row.addWidget(button('Allow folder…',self.pc_add_root));row.addWidget(button('Remove selected folder',self.pc_remove_root));row.addWidget(button('PC overview',self.pc_overview));row.addWidget(button('Restore a file edit…',self.pc_undo));layout.addLayout(row)
-        self.pc_output=QPlainTextEdit();self.pc_output.setReadOnly(True);self.pc_output.setPlaceholderText('Diagnostic steps, approval decisions, command output and repair results appear here.');layout.addWidget(self.pc_output,1)
-        history_row=QHBoxLayout();history_row.addWidget(button('Previous investigations…',self.pc_history));history_row.addStretch();layout.addLayout(history_row)
-        self.pc_request=QPlainTextEdit();self.pc_request.setMaximumHeight(85);self.pc_request.setPlaceholderText('Example: Program X crashes on startup. Find the cause, propose a fix, and verify it.');layout.addWidget(self.pc_request)
-        row=QHBoxLayout();self.pc_state=label('Ready · load a model with at least 4096 context tokens','muted',True);row.addWidget(self.pc_state,1)
-        self.pc_stop=button('Stop',self.stop_assistant);self.pc_stop.setEnabled(False);row.addWidget(self.pc_stop)
-        self.pc_start=button('Start investigation',self.start_assistant,True);row.addWidget(self.pc_start);layout.addLayout(row)
-        layout.addWidget(label('Only selected folders and the active project’s linked folders are readable/editable through file tools. System diagnostics include OS, apps, processes and recent user logs. Logs/configuration may contain private data; common secrets are redacted before model use. Commands require separate approval and can act beyond selected folders.','muted',True))
+        self.access_mode.setCurrentIndex(max(0,self.access_mode.findData(settings.get('mode','confirm'))))
+        wide(self.access_mode,240);self.access_mode.setMinimumWidth(200)
+        self.allow_admin=QCheckBox('Allow administrator requests');self.allow_admin.setChecked(False)
+        self.pc_mode_note=label('','fine',True)
+        self.pc_roots=EmptyList('No folders allowed yet. The assistant can only read and edit inside folders you add here.')
+        self.pc_roots.setMaximumHeight(84);self.pc_roots.addItems(settings.get('roots',[]))
+        layout.addWidget(card(
+            row(label('Access mode','muted'),self.access_mode,self.allow_admin,spacing=12),
+            self.pc_mode_note,
+            self.pc_roots,
+            row(button('Allow folder…',self.pc_add_root),button('Remove selected folder',self.pc_remove_root,kind='quiet'),
+                trailing=(button('PC overview',self.pc_overview,kind='quiet'),button('Restore a file edit…',self.pc_undo,kind='quiet'))),
+            spacing=12,padding=16))
+        self.pc_output=QPlainTextEdit();self.pc_output.setObjectName('console');self.pc_output.setReadOnly(True)
+        self.pc_output.setPlaceholderText('Diagnostic steps, approval decisions, command output and repair results appear here.');layout.addWidget(self.pc_output,1)
+        self.pc_request=QPlainTextEdit();self.pc_request.setObjectName('flat');self.pc_request.setMaximumHeight(72)
+        self.pc_request.setPlaceholderText('Example: Program X crashes on startup. Find the cause, propose a fix, and verify it.')
+        self.pc_state=label('Ready · load a model with at least 4096 context tokens','fine',True)
+        self.pc_stop=button('Stop',self.stop_assistant);self.pc_stop.setEnabled(False)
+        self.pc_start=button('Start investigation',self.start_assistant,True)
+        layout.addWidget(card(
+            row(button('Previous investigations…',self.pc_history,kind='quiet')),
+            self.pc_request,
+            row((self.pc_state,1),trailing=(self.pc_stop,self.pc_start)),
+            spacing=8))
+        layout.addWidget(label('Only selected folders and the active project’s linked folders are readable and editable through file tools. System diagnostics include OS, apps, processes and recent user logs. Logs and configuration may contain private data; common secrets are redacted before model use. Commands require separate approval and can act beyond selected folders.','fine',True))
         self.access_mode.currentIndexChanged.connect(self.pc_settings_changed);self.allow_admin.toggled.connect(self.pc_settings_changed);self.pc_mode_description()
     def pc_mode_description(self):
         descriptions={'inspect':'Read-only: diagnostics and selected-file reads. All writes and arbitrary commands are blocked.',

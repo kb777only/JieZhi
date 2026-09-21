@@ -7,7 +7,7 @@ import threading
 import uuid
 
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
-from PySide6.QtGui import QFont, QTextCursor, QShortcut, QKeySequence
+from PySide6.QtGui import QFont, QTextCursor, QShortcut, QKeySequence, QPainter, QColor
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QStackedWidget, QTextBrowser, QPlainTextEdit,
@@ -27,46 +27,18 @@ from .appearance import DeviceWelcome
 from .settings_view import SettingsView
 from .workflow_view import WorkflowView
 
-STYLE = """
-QWidget { background: #f3f5fa; color: #202b40; font-size: 14px; font-family: "Noto Sans", sans-serif; }
-QMainWindow { background: #f3f5fa; }
-QLabel { background: transparent; }
-QLabel#brand { color: #386bff; font-size: 28px; font-weight: 700; }
-QLabel#title { font-size: 29px; font-weight: 700; color: #17253e; }
-QLabel#muted { color: #6d7b92; font-size: 12px; }
-QLabel#badge { color: #386bff; background: #e8eeff; border-radius: 12px; padding: 12px; }
-QWidget#sidebar { background: #eaf0fc; border-radius: 22px; }
-QPushButton { background: #ffffff; border: 1px solid #e0e6f0; border-radius: 12px; padding: 10px 14px; font-weight: 500; }
-QPushButton:hover { background: #e8eeff; border-color: #b8caff; }
-QPushButton:pressed { background: #dce6ff; }
-QPushButton:disabled { color: #a4aec0; background: #edf0f6; border-color: #e9edf4; }
-QPushButton#primary { background: #386bff; color: #ffffff; border: 1px solid #386bff; font-weight: 600; }
-QPushButton#primary:hover { background: #285be9; }
-QPushButton#primary:disabled { background: #b7c8f8; border-color: #b7c8f8; }
-QListWidget { background: #ffffff; border: 0; border-radius: 16px; padding: 7px; outline: none; }
-QListWidget#navigation { background: transparent; font-size: 15px; }
-QListWidget#navigation::item { padding: 8px 10px; }
-QListWidget::item { padding: 12px 10px; border-radius: 10px; margin: 2px; }
-QListWidget::item:hover { background: #f0f4ff; }
-QListWidget::item:selected { background: #dfe8ff; color: #275ae3; }
-QTextBrowser, QPlainTextEdit, QLineEdit { background: #ffffff; border: 1px solid #e1e7f1; border-radius: 16px; padding: 13px; selection-background-color: #d8e4ff; selection-color: #17253e; }
-QTextBrowser { border: 0; padding: 20px; }
-QLineEdit { border-radius: 12px; padding: 10px; }
-QPlainTextEdit:focus, QLineEdit:focus { border-color: #89a7ff; }
-QComboBox, QSpinBox, QDoubleSpinBox { background: #ffffff; padding: 8px; border: 1px solid #e0e6f0; border-radius: 10px; }
-QComboBox QAbstractItemView { background: white; selection-background-color: #dfe8ff; }
-QProgressBar { min-height: 10px; border: 0; border-radius: 5px; background: #e3e9f4; text-align: center; font-size: 10px; }
-QProgressBar::chunk { background: #386bff; border-radius: 5px; }
-QStatusBar { color: #6d7b92; font-size: 12px; padding: 4px 12px; }
-QScrollBar:vertical { width: 8px; background: transparent; margin: 4px; }
-QScrollBar::handle:vertical { background: #cbd5e7; min-height: 24px; border-radius: 4px; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QScrollBar:horizontal { height: 8px; background: transparent; margin: 0; }
-QScrollBar::handle:horizontal { background: #cbd5e7; min-width: 24px; border-radius: 4px; }
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
-QSplitter::handle { background: transparent; width: 12px; }
-QToolTip { color: #202b40; background: white; border: 1px solid #dfe6f1; padding: 6px; }
-"""
+from .theme import (
+    XS, SM, MD, LG, XL, SIDEBAR, LABEL, SMALL, stylesheet, tokens,
+)
+
+STYLE = stylesheet(False)
+
+# Destinations grouped by what they are for, over the flat page stack. The
+# second value is the stack index, so call sites keep addressing pages by index.
+NAV_GROUPS = [
+    ("WORK", [("Chat", 0), ("Projects", 5), ("PC Assistant", 6), ("Flow canvas", 7)]),
+    ("PHONE", [("Welcome & device", 2), ("Phone models", 1), ("Discover models", 4), ("Diagnostics", 3)]),
+]
 
 
 class Worker(QThread):
@@ -85,10 +57,69 @@ class Worker(QThread):
             self.error.emit(str(e))
 
 
-def button(text, action, primary=False):
+class NavList(QListWidget):
+    """Grouped navigation over an ungrouped stack.
+
+    Group headings are rows too, so the mapping between a visible row and a
+    page index lives here instead of in every caller.
+    """
+    pageChanged = Signal(int)
+
+    def __init__(self, groups):
+        super().__init__(); self.setObjectName("navigation")
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.headings = []; self.page_of_row = {}; self.row_of_page = {}
+        for title, entries in groups:
+            heading = QListWidgetItem(title); heading.setFlags(Qt.ItemFlag.NoItemFlags)
+            font = heading.font(); font.setPixelSize(LABEL); font.setBold(True)
+            font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1)
+            heading.setFont(font); self.addItem(heading); self.headings.append(heading)
+            for text, page in entries:
+                self.addItem(QListWidgetItem(text))
+                self.page_of_row[self.count() - 1] = page; self.row_of_page[page] = self.count() - 1
+        super().currentRowChanged.connect(lambda row: self.pageChanged.emit(self.page_of_row.get(row, -1)))
+
+    def fit(self):
+        """Size to the rows. Called after the stylesheet lands, since padding
+        from the sheet is what decides how tall a row actually is."""
+        self.setFixedHeight(sum(self.sizeHintForRow(i) + 2 for i in range(self.count())) + SM)
+
+    def setCurrentRow(self, page):
+        super().setCurrentRow(self.row_of_page.get(page, -1))
+
+    def currentRow(self):
+        return self.page_of_row.get(super().currentRow(), -1)
+
+    def recolour(self, dark):
+        self.fit()
+        ink = QColor(tokens(dark)["ink_3"])
+        for heading in self.headings:
+            heading.setForeground(ink)
+
+
+class EmptyList(QListWidget):
+    """A list that says what belongs in it while it is empty."""
+
+    def __init__(self, placeholder, parent=None):
+        super().__init__(parent); self.placeholder = placeholder
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.count():
+            return
+        painter = QPainter(self.viewport())
+        painter.setPen(QColor(tokens(getattr(self.window(), "dark", False))["ink_3"]))
+        font = painter.font(); font.setPixelSize(SMALL); painter.setFont(font)
+        painter.drawText(self.viewport().rect().adjusted(XL, 0, -XL, 0),
+                         Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self.placeholder)
+        painter.end()
+
+
+def button(text, action, primary=False, kind=""):
     widget = QPushButton(text)
-    if primary:
-        widget.setObjectName("primary")
+    widget.setObjectName("primary" if primary else kind)
+    widget.setCursor(Qt.CursorShape.PointingHandCursor)
     widget.clicked.connect(action)
     return widget
 
@@ -97,6 +128,50 @@ def label(text, kind="", wrap=False):
     widget = QLabel(text); widget.setTextFormat(Qt.TextFormat.PlainText)
     widget.setObjectName(kind); widget.setWordWrap(wrap)
     return widget
+
+
+def wide(widget, width):
+    """Cap a control so it stops growing with the window."""
+    widget.setMaximumWidth(width); return widget
+
+
+def _place(layout, item):
+    stretch = 0
+    if isinstance(item, tuple):
+        item, stretch = item
+    if isinstance(item, QWidget):
+        layout.addWidget(item, stretch)
+    elif item is not None:
+        layout.addLayout(item, stretch)
+
+
+def row(*leading, trailing=(), spacing=SM):
+    """A control row that always ends in a stretch.
+
+    Rows without one let Qt spread their buttons over the whole window, which
+    is what made every action on a page look equally important.
+    """
+    layout = QHBoxLayout(); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(spacing)
+    for item in leading:
+        _place(layout, item)
+    # An item that already takes the slack is the stretch; adding another one
+    # would halve the space it just claimed.
+    if not any(isinstance(item, tuple) and item[1] for item in leading):
+        layout.addStretch(1)
+    for item in trailing:
+        _place(layout, item)
+    return layout
+
+
+def card(*children, spacing=MD, padding=MD):
+    """The one container: a surface, a hairline border, one radius."""
+    panel = QWidget(); panel.setObjectName("card")
+    panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+    layout = QVBoxLayout(panel)
+    layout.setContentsMargins(padding, padding, padding, padding); layout.setSpacing(spacing)
+    for child in children:
+        _place(layout, child)
+    return panel
 
 
 class Window(DesktopActionsView, ProjectChatView, SettingsView, WorkflowView, HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
@@ -112,37 +187,44 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, WorkflowView, Hu
         self.resize(1440, 1000); self.setMinimumSize(1160, 840)
         self.setStyleSheet(STYLE)
         root = QWidget(); self.setCentralWidget(root); layout = QHBoxLayout(root)
-        layout.setContentsMargins(18, 18, 18, 18); layout.setSpacing(22)
-        sidebar_panel = QWidget(); sidebar_panel.setObjectName("sidebar"); sidebar_panel.setFixedWidth(216)
-        sidebar = QVBoxLayout(sidebar_panel); sidebar.setContentsMargins(16, 24, 16, 20); sidebar.setSpacing(14)
-        sidebar.addWidget(label("借智  JieZhi", "brand"))
-        sidebar.addWidget(label("Intelligence, borrowed.", "muted"))
-        self.nav = QListWidget(); self.nav.setObjectName("navigation"); self.nav.setFixedHeight(370)
-        self.nav.addItems(["Chat", "Phone models", "Welcome & device", "Diagnostics", "Discover models", "Projects", "PC Assistant", "Flow canvas"])
-        sidebar.addWidget(self.nav)
-        sidebar.addWidget(button("＋  New conversation", self.new_chat))
-        sidebar.addWidget(label("RECENT CONVERSATIONS", "muted"))
-        self.history = QListWidget(); self.history.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.history.setTextElideMode(Qt.TextElideMode.ElideRight)
-        self.history.itemClicked.connect(self.open_chat); sidebar.addWidget(self.history)
-        sidebar.addWidget(button("Delete conversation", self.delete_chat))
-        self.connection = label("○  No phone connected", "muted", True); sidebar.addWidget(self.connection)
-        sidebar.addWidget(label("USB connection · Local inference", "muted"))
-        layout.addWidget(sidebar_panel)
-        content = QVBoxLayout(); content.setSpacing(12); layout.addLayout(content, 1)
-        header=QHBoxLayout();header.addWidget(label('JIEZHI  /  YOUR LOCAL WORKSPACE','muted'));header.addStretch()
-        self.theme_button=button('☾',self.toggle_dark);self.theme_button.setObjectName('corner');self.theme_button.setAccessibleName('Toggle dark mode');header.addWidget(self.theme_button)
-        self.settings_button=button('⚙',self.open_settings);self.settings_button.setObjectName('corner');self.settings_button.setToolTip('Settings');self.settings_button.setAccessibleName('Open settings');header.addWidget(self.settings_button);content.addLayout(header)
+        layout.setContentsMargins(LG, LG, LG, SM); layout.setSpacing(XL)
+        layout.addWidget(self.build_sidebar())
+        content = QVBoxLayout(); content.setContentsMargins(0, XS, 0, 0); content.setSpacing(LG)
+        layout.addLayout(content, 1)
         self.pages = QStackedWidget(); content.addWidget(self.pages, 1)
         self.telemetry_panel = TelemetryPanel(self.client, self); content.addWidget(self.telemetry_panel)
         self.build_chat(); self.build_models(); self.build_setup(); self.build_diagnostics(); self.build_hub(); self.build_projects(); self.build_assistant(); self.build_workflows(); self.build_settings(); self.init_desktop_popup()
-        self.nav.currentRowChanged.connect(self.pages.setCurrentIndex); self.nav.setCurrentRow(2)
+        self.nav.pageChanged.connect(self.pages.setCurrentIndex); self.nav.setCurrentRow(2)
         self.refresh_history(); self.render_chat(); self.apply_appearance()
         self.statusBar().showMessage("Connect your Snapdragon 8 Elite phone to get started.")
         self.heartbeat = QTimer(self); self.heartbeat.setInterval(20_000)
         self.heartbeat.timeout.connect(self.keep_alive); self.heartbeat.start()
         QTimer.singleShot(100, lambda: self.run_job(lambda _: self.hub.restore(), self.hub_account_result, "Restoring account…"))
         QTimer.singleShot(1000, self.start_scan)
+
+    def build_sidebar(self):
+        panel = QWidget(); panel.setObjectName("sidebar"); panel.setFixedWidth(SIDEBAR)
+        panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        sidebar = QVBoxLayout(panel); sidebar.setContentsMargins(MD, LG, MD, MD); sidebar.setSpacing(MD)
+        sidebar.addWidget(label("借智  JieZhi", "brand"))
+        sidebar.addWidget(label("Intelligence, borrowed.", "fine"))
+        self.nav = NavList(NAV_GROUPS); sidebar.addWidget(self.nav)
+        sidebar.addWidget(button("＋  New conversation", self.new_chat, True))
+        sidebar.addWidget(label("RECENT CONVERSATIONS", "section"))
+        self.history = EmptyList("Conversations you send are saved here.")
+        self.history.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.history.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.history.itemClicked.connect(self.open_chat); sidebar.addWidget(self.history, 1)
+        self.delete_button = button("Delete conversation", self.delete_chat, kind="quiet")
+        sidebar.addWidget(self.delete_button)
+        self.connection = label("○  No phone connected", "status", True); sidebar.addWidget(self.connection)
+        self.theme_button = button("☾", self.toggle_dark, kind="corner")
+        self.theme_button.setAccessibleName("Toggle dark mode")
+        self.settings_button = button("⚙", self.open_settings, kind="corner")
+        self.settings_button.setToolTip("Settings"); self.settings_button.setAccessibleName("Open settings")
+        sidebar.addLayout(row(label("USB · Local inference", "fine"),
+                              trailing=(self.theme_button, self.settings_button)))
+        return panel
 
     def start_scan(self):
         if self.busy:
@@ -160,73 +242,113 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, WorkflowView, Hu
             self.workers.discard(worker); worker.deleteLater()
         worker.finished.connect(finish); worker.start()
 
-    def page(self, title, subtitle):
-        page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(14)
-        layout.addWidget(label(title, "title")); layout.addWidget(label(subtitle, "muted", True))
+    def page(self, title, subtitle, trailing=None):
+        """Title, subtitle and one optional status chip, on a single band."""
+        page = QWidget(); layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(LG)
+        heading = QVBoxLayout(); heading.setContentsMargins(0, 0, 0, 0); heading.setSpacing(2)
+        heading.addWidget(label(title, "title")); heading.addWidget(label(subtitle, "subtitle", True))
+        head = QHBoxLayout(); head.setContentsMargins(0, 0, 0, 0); head.setSpacing(XL)
+        head.addLayout(heading, 1)
+        if trailing is not None:
+            head.addWidget(trailing, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addLayout(head)
         self.pages.addWidget(page)
         return layout
 
     def build_chat(self):
-        layout = self.page("What’s on your mind?", "A private conversation, with room to think.")
-        self.project_badge = label("Personal conversation · No project", "muted"); layout.addWidget(self.project_badge)
+        self.model_badge = label("No model loaded · choose one in Phone models", "badge")
+        layout = self.page("What’s on your mind?", "A private conversation, with room to think.", self.model_badge)
+        self.project_badge = label("Personal conversation · No project", "status", True)
+        self.project_badge.setVisible(False); layout.addWidget(self.project_badge)
         self.build_project_chat_controls(layout)
-        self.model_badge = label("No model loaded · Open Phone models to choose one", "badge", True); layout.addWidget(self.model_badge)
-        self.transcript = QTextBrowser(); self.transcript.setOpenExternalLinks(False); self.transcript.setAcceptDrops(False); layout.addWidget(self.transcript, 1)
-        self.attachment_label = label("Spreadsheets, PDF, text & code · Drop files here", "muted", True); layout.addWidget(self.attachment_label)
-        files_row = QHBoxLayout(); files_row.addWidget(button("＋ Attach files", self.attach_files))
-        self.preview_files = button("Preview", self.preview_attachments); files_row.addWidget(self.preview_files)
-        self.clear_files = button("Remove attachments", self.clear_attachments); files_row.addWidget(self.clear_files); files_row.addStretch(); layout.addLayout(files_row)
+        self.transcript = QTextBrowser(); self.transcript.setOpenExternalLinks(False); self.transcript.setAcceptDrops(False)
+        layout.addWidget(self.transcript, 1)
+
+        self.attachment_label = label("Spreadsheets, PDF, text and code · drop files anywhere", "fine", True)
+        self.preview_files = button("Preview", self.preview_attachments, kind="quiet")
+        self.clear_files = button("Remove", self.clear_attachments, kind="quiet")
+        attach = button("＋ Attach files", self.attach_files, kind="quiet")
+        self.composer = QPlainTextEdit(); self.composer.setObjectName("flat"); self.composer.setAcceptDrops(False)
+        self.composer.setPlaceholderText("Ask a question, or attach a document to explore…")
+        self.composer.setMinimumHeight(84); self.composer.setMaximumHeight(112)
+        self.metrics = label("", "fine")
+        self.stop_button = button("Stop", self.stop); self.stop_button.setEnabled(False)
+        self.send_button = button("Send message", self.send, True)
+        layout.addWidget(card(
+            row(self.attachment_label, trailing=(attach, self.preview_files, self.clear_files)),
+            self.composer,
+            row(self.metrics, trailing=(self.stop_button, self.send_button)),
+            spacing=SM,
+        ))
         self.update_attachments()
-        self.composer = QPlainTextEdit(); self.composer.setAcceptDrops(False); self.composer.setPlaceholderText("Ask a question, or attach a document to explore…"); self.composer.setMinimumHeight(95); self.composer.setMaximumHeight(125); layout.addWidget(self.composer)
-        row = QHBoxLayout(); self.metrics = label("", "muted"); row.addWidget(self.metrics, 1)
-        self.stop_button = button("Stop", self.stop); self.stop_button.setEnabled(False); row.addWidget(self.stop_button)
-        self.send_button = button("Send message", self.send, True); row.addWidget(self.send_button); layout.addLayout(row)
         self.send_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self)
         self.send_shortcut.activated.connect(self.send)
         self.send_button.setToolTip("Ctrl+Enter")
 
     def build_models(self):
         layout = self.page("Your model library", "Import a GGUF from this PC. It is transferred once, verified, and stored privately on the phone.")
-        row = QHBoxLayout()
-        row.addWidget(button("Import GGUF…", self.import_model, True))
-        row.addWidget(button("Refresh library", self.refresh)); row.addStretch(); layout.addLayout(row)
-        layout.addWidget(label("Start with Q4_0 models. Architecture, quantization, and phone memory determine compatibility.", "muted", True))
-        self.models = QListWidget(); layout.addWidget(self.models, 1)
-        row = QHBoxLayout()
+        layout.addLayout(row(button("Import GGUF…", self.import_model, True), button("Refresh library", self.refresh)))
+        layout.addWidget(label("Start with Q4_0 models. Architecture, quantization and phone memory determine compatibility.", "fine", True))
+        self.models = EmptyList("No models on the phone yet. Import a GGUF to send one over USB.")
+        layout.addWidget(self.models, 1)
+
         self.backend = QComboBox(); self.backend.addItem("Hexagon NPU", "npu"); self.backend.addItem("Phone CPU · diagnostics", "cpu")
-        row.addWidget(self.backend); row.addWidget(label("Context"))
-        self.context = QSpinBox(); self.context.setRange(512, 8192); self.context.setSingleStep(512); self.context.setValue(2048); row.addWidget(self.context)
-        row.addStretch(); row.addWidget(button("Load model", self.load_model, True)); row.addWidget(button("Unload", self.unload)); layout.addLayout(row)
-        row = QHBoxLayout(); row.addWidget(button("Delete selected from phone", self.delete_model)); row.addStretch()
-        self.pause_button = button("Pause transfer", self.pause_transfer); self.pause_button.setEnabled(False); row.addWidget(self.pause_button); layout.addLayout(row)
-        self.progress = QProgressBar(); self.progress.setValue(0); layout.addWidget(self.progress)
-        self.transfer_label = label("Select a local model to begin.", "muted"); layout.addWidget(self.transfer_label)
+        wide(self.backend, 220)
+        self.context = QSpinBox(); self.context.setRange(512, 8192); self.context.setSingleStep(512); self.context.setValue(2048)
+        wide(self.context, 110)
+        layout.addLayout(row(
+            label("Backend", "muted"), self.backend, label("Context", "muted"), self.context,
+            trailing=(button("Delete from phone", self.delete_model, kind="danger"),
+                      button("Unload", self.unload), button("Load model", self.load_model, True)),
+            spacing=MD,
+        ))
+        self.progress = QProgressBar(); self.progress.setValue(0); self.progress.setVisible(False)
+        wide(self.progress, 360)
+        self.transfer_label = label("Select a local model to begin.", "fine")
+        self.pause_button = button("Pause transfer", self.pause_transfer, kind="quiet"); self.pause_button.setEnabled(False)
+        layout.addLayout(row(self.progress, self.transfer_label, trailing=(self.pause_button,), spacing=MD))
 
     def build_setup(self):
         layout = self.page("Welcome to JieZhi", "A phone-powered workspace, built around you.")
-        self.welcome_art=DeviceWelcome();layout.addWidget(self.welcome_art)
-        cached=read_json(DATA/'recommendation-phone.json',{})
-        if cached.get('phone'):self.welcome_art.device(cached['phone'],cached.get('soc',''))
-        for title, desc in [
-            ("01  Enable USB debugging", "On Android, enable Developer options → USB debugging. Connect a data-capable cable and approve this PC on the phone."),
-            ("02  Install the Android client", "Select the USB device below and install JieZhi. Xiaomi may ask you to allow installation over USB."),
-            ("03  Pair with JieZhi", "Connect, then enter the six-digit code displayed by the Android client. Keep the client running while using the desktop app."),
+        self.welcome_art = DeviceWelcome(); layout.addWidget(self.welcome_art)
+        steps = []
+        for number, title, desc in [
+            ("01", "Enable USB debugging", "On Android, enable Developer options → USB debugging. Connect a data-capable cable and approve this PC on the phone."),
+            ("02", "Install the Android client", "Select the USB device below and install JieZhi. Xiaomi may ask you to allow installation over USB."),
+            ("03", "Pair with JieZhi", "Connect, then enter the six-digit code displayed by the Android client. Keep the client running while using the desktop app."),
         ]:
-            layout.addWidget(label(title)); layout.addWidget(label(desc, "muted", True))
-        row = QHBoxLayout(); self.device_picker = QComboBox(); row.addWidget(self.device_picker, 1)
-        row.addWidget(button("Find phones", self.scan)); layout.addLayout(row)
-        row = QHBoxLayout(); row.addWidget(button("Install Android client", self.install_client))
-        row.addWidget(button("Connect && pair", self.connect_phone, True)); row.addWidget(button("Disconnect", self.disconnect_phone)); layout.addLayout(row)
-        self.device_details = label("Waiting for a phone…", "muted", True); layout.addWidget(self.device_details)
+            step = QHBoxLayout(); step.setContentsMargins(0, 0, 0, 0); step.setSpacing(MD)
+            step.addWidget(label(number, "section"), 0, Qt.AlignmentFlag.AlignTop)
+            text = QVBoxLayout(); text.setContentsMargins(0, 0, 0, 0); text.setSpacing(2)
+            text.addWidget(label(title, "strong")); text.addWidget(label(desc, "muted", True))
+            step.addLayout(text, 1); steps.append(step)
+        layout.addWidget(card(*steps, spacing=MD, padding=LG))
+
+        self.device_picker = QComboBox(); wide(self.device_picker, 420)
+        self.device_picker.setMinimumWidth(320)
+        layout.addLayout(row(
+            self.device_picker, button("Find phones", self.scan),
+            trailing=(button("Install Android client", self.install_client),
+                      button("Disconnect", self.disconnect_phone),
+                      button("Connect && pair", self.connect_phone, True)),
+            spacing=MD,
+        ))
+        self.device_details = label("Waiting for a phone…", "status", True)
+        layout.addWidget(card(self.device_details, padding=MD))
         layout.addStretch()
-        layout.addWidget(label("If Linux reports “no permissions”, install the USB access rule. Deepin will request administrator authentication.", "muted", True))
-        layout.addWidget(button("Fix USB access…", self.fix_usb))
+        layout.addLayout(row(
+            (label("If Linux reports “no permissions”, install the USB access rule. Deepin will request administrator authentication.", "fine", True), 1),
+            trailing=(button("Fix USB access…", self.fix_usb, kind="quiet"),), spacing=MD,
+        ))
 
     def build_diagnostics(self):
         layout = self.page("Runtime diagnostics", "The selected backend is a request. Native Hexagon initialization and offload logs provide evidence of NPU use.")
-        row = QHBoxLayout(); row.addWidget(button("Read phone runtime logs", self.logs)); row.addWidget(button("Save diagnostics…", self.save_logs)); row.addStretch(); layout.addLayout(row)
-        self.log_text = QPlainTextEdit(); self.log_text.setReadOnly(True); self.log_text.setFont(QFont("monospace", 11)); layout.addWidget(self.log_text, 1)
-        layout.addWidget(label("NPU acceleration can still involve CPU tokenization, sampling, and unsupported operations. This view does not measure a hardware utilization percentage.", "muted", True))
+        layout.addLayout(row(button("Read phone runtime logs", self.logs, True), button("Save diagnostics…", self.save_logs)))
+        self.log_text = QPlainTextEdit(); self.log_text.setObjectName("console"); self.log_text.setReadOnly(True)
+        self.log_text.setPlaceholderText("Read the phone's runtime logs to see how the model was loaded and where it ran.")
+        layout.addWidget(self.log_text, 1)
+        layout.addWidget(label("NPU acceleration can still involve CPU tokenization, sampling and unsupported operations. This view does not measure a hardware utilization percentage.", "fine", True))
 
     def run_job(self, function, done=lambda _: None, message="Working…", exclusive=True, events=None):
         if exclusive and self.busy:
@@ -247,6 +369,7 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, WorkflowView, Hu
                 self.generating = False; self.stop_button.setEnabled(False); self.send_button.setEnabled(True)
                 self.save_chat(); self.refresh_history()
             self.pause_button.setEnabled(False); self.hub_pause.setEnabled(False)
+            self.progress.setVisible(False); self.hub_progress.setVisible(False)
         worker.finished.connect(finish); worker.start()
 
     def failed(self, message):
@@ -357,6 +480,7 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, WorkflowView, Hu
         self.run_job(lambda w: self.client.import_model(Path(path), w.progress.emit, self.transfer_cancel), self.update_status, "Preparing model transfer…")
 
     def on_progress(self, percent, text):
+        self.progress.setVisible(True); self.hub_progress.setVisible(True)
         self.progress.setValue(percent); self.transfer_label.setText(f"{text} · {percent}%")
         self.hub_progress.setValue(percent); self.hub_note.setText(f"{text} · {percent}%")
 
@@ -385,18 +509,29 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, WorkflowView, Hu
         self.run_job(work, self.update_status, "Removing model…")
 
     def render_chat(self):
+        t = tokens(self.dark)
         if not self.messages:
-            ink='#dce6ff' if self.dark else '#273c66'
-            self.transcript.setHtml(f'<div style="margin:48px 28px;color:{ink}"><h1>A fresh conversation.</h1><p>Explore an idea, bring a document, or pick up a project.</p><p style="color:#8393b0">Your files stay here. Your phone does the thinking.</p></div>');return
+            self.transcript.setHtml(
+                f'''<div style="margin:56px 12px;color:{t["ink"]}">
+                <p style="font-size:20px;font-weight:600;margin:0 0 10px">A fresh conversation.</p>
+                <p style="color:{t["ink_2"]};margin:0 0 6px">Explore an idea, bring a document, or pick up a project.</p>
+                <p style="color:{t["ink_3"]};margin:0">Your files stay here. Your phone does the thinking.</p></div>''')
+            return
         parts = []
         for message in self.messages:
-            who = "YOU" if message["role"] == "user" else "JIEZHI"
-            color = ("#a8b5cd" if self.dark else "#6d7b92") if who == "YOU" else ("#90b1ff" if self.dark else "#386bff")
+            mine = message["role"] == "user"
+            who = "You" if mine else "JieZhi"
+            color = t["ink_3"] if mine else t["accent_text"]
             content = html.escape(message["content"]).replace("\n", "<br>")
             files = " · ".join(html.escape(f["name"]) for f in message.get("attachments", []))
-            attachment_line = f'<p style="color:#d17832">Attached: {files}</p>' if files else ""
-            action_line="".join("<p style=\"color:#8393b0\">"+html.escape(a)+"</p>" for a in message.get("actions",[]))
-            parts.append(f'<p style="color:{color};margin-top:22px"><b>{who}</b></p>{attachment_line}<p>{content}</p>{action_line}')
+            attachment_line = f'<p style="color:{t["ink_3"]};margin:0 0 6px">Attached · {files}</p>' if files else ""
+            action_line = "".join(
+                f'<p style="color:{t["ink_3"]};margin:4px 0 0">{html.escape(a)}</p>'
+                for a in message.get("actions", []))
+            parts.append(
+                f'<p style="color:{color};margin:26px 0 6px;font-size:11px;font-weight:700;'
+                f'letter-spacing:1px">{who.upper()}</p>{attachment_line}'
+                f'<p style="color:{t["ink"]};margin:0">{content}</p>{action_line}')
         self.transcript.setHtml("".join(parts)); self.transcript.moveCursor(QTextCursor.MoveOperation.End)
 
     def send(self):
