@@ -2,12 +2,22 @@ name: Publish phone client
 
 # The PC app installs and updates itself from this repository, so it needs no
 # build server. The phone client does: it needs the Android SDK, which an
-# installation is not going to have. This builds it on every push to main and
-# puts it on the `prebuilt` branch for the app to fetch.
+# installation is not going to have. This builds it when a push to main changes
+# it and puts it on the `prebuilt` branch, in pieces, for the app to fetch.
 
 on:
   push:
     branches: [main]
+    # The APK is large and the branch is force-pushed, so only rebuild it when
+    # a push actually changes the client.
+    paths:
+      - android/**
+      - third_party/**
+      - scripts/build-android.sh
+      - scripts/build-media.sh
+      - scripts/prepare-qnn.py
+      - scripts/publish-client.sh
+      - .github/workflows/publish-client.yml
   workflow_dispatch:
 
 permissions:

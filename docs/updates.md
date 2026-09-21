@@ -94,14 +94,20 @@ is reinstalled from Device setup, and host and Android versions are kept in step
 by `scripts/release-check.sh`.
 
 Building that client needs the Android SDK, the NDK and a pinned QNN runtime,
-which an installation is not going to have. So CI builds it on every push to
-`main` and `scripts/publish-client.sh` puts it on the `prebuilt` branch as a
-single orphan commit — one file and a `manifest.json` carrying its SHA-256.
+which an installation is not going to have. So CI builds it when a push to
+`main` touches the client and `scripts/publish-client.sh` puts it on the
+`prebuilt` branch as a single orphan commit, with a `manifest.json` beside it.
 `raw.githubusercontent.com` serves that branch unauthenticated, and
 `updates.fetch_client()` downloads and verifies it when neither a packaged APK
 nor a local Android build is present.
 
+The QNN assets put the APK at about 123 MB, and GitHub refuses a push containing
+a file over 100 MB, so it goes up in 45 MB pieces named `jiezhi-client.apk.000`
+and on. The manifest carries a SHA-256 for each piece and one for the whole
+file; the app joins them in order, checks each piece as it lands so a bad one is
+named, and checks the result before sideloading it. Nothing is kept if either
+check fails.
+
 The branch is force-pushed each time, so exactly one copy of the APK exists in
-the repository rather than one per build. The publish step fails with the reason
-if the APK ever grows past what a branch can carry, since GitHub refuses a push
-containing a file over 100 MB.
+the repository rather than one per build, and the build only runs when the
+client actually changed.
