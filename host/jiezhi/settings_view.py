@@ -14,7 +14,7 @@ class SettingsView:
         form.addLayout(row(label('Color theme','muted'),self.theme_choice,spacing=12))
         self.motion_choice=QCheckBox('Fluid gradient animations');self.motion_choice.setChecked(self.preferences.get('motion',True));form.addWidget(self.motion_choice)
         self.telemetry_choice=QCheckBox('Show live phone telemetry on every page');self.telemetry_choice.setChecked(self.preferences.get('telemetry',True));form.addWidget(self.telemetry_choice)
-        form.addWidget(label('Turning telemetry off also stops background sensor polling. Reduced motion keeps the gradients still.','fine',True));col.addWidget(box)
+        form.addWidget(label('Turning telemetry off also stops background sensor polling. Reduced motion keeps the gradients still and opens the selection chip, its menu and its results instantly.','fine',True));col.addWidget(box)
         box=QGroupBox('Hugging Face account');form=QVBoxLayout(box);form.addWidget(label('Public model discovery works without an account. Sign in with a read token for your private or gated models.','fine',True));self.settings_account_label=label(self.account_label.text(),'status',True);form.addWidget(self.settings_account_label);form.addWidget(self.hub_account_panel);self.hub_account_panel.show();col.addWidget(box)
         self.build_desktop_settings(col)
         box=QGroupBox('Phone && generation defaults');form=QVBoxLayout(box)

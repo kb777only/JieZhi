@@ -66,7 +66,7 @@ def test_menu_dismisses_when_the_pointer_leaves_it(qtbot,tmp_path,monkeypatch):
     p.offer({'kind':'text','text':'Selected passage'},QPoint(400,200));p.expand();assert p.menu.isVisible()
     monkeypatch.setattr(popup.QCursor,'pos',lambda:QPoint(1600,1100))
     p.poll();clock[0]+=.5;p.poll();assert p.menu.isVisible()
-    clock[0]+=.5;p.poll();assert not p.menu.isVisible()
+    clock[0]+=.5;p.poll();qtbot.waitUntil(lambda:not p.menu.isVisible())
     w.close()
 
 
@@ -99,8 +99,8 @@ def test_chip_is_compact_and_fades_in(qtbot,tmp_path,monkeypatch):
     w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
     assert p.chip.width()>p.chip.height() and p.chip.width()<46
     p.offer({'kind':'text','text':'Selected passage'},QPoint(400,200))
-    assert p.chip.windowOpacity()<1 and p.fade.state()==popup.QPropertyAnimation.State.Running
-    qtbot.waitUntil(lambda:p.fade.state()==popup.QPropertyAnimation.State.Stopped)
+    assert p.chip.windowOpacity()<1 and p.chip_motion.fade.state()==popup.QPropertyAnimation.State.Running
+    qtbot.waitUntil(lambda:p.chip_motion.fade.state()==popup.QPropertyAnimation.State.Stopped)
     assert p.chip.windowOpacity()==1
     w.close()
 
@@ -123,6 +123,7 @@ def test_custom_reveals_sliders_and_generates_a_blend(qtbot,tmp_path,monkeypatch
     p.offer({'kind':'text','text':'Original passage'},QPoint(400,200));p.activate('rewrite')
     panel=p.style_panel;assert not panel.generate.isVisible();qtbot.waitUntil(panel.ready)
     panel.custom.click();assert panel.generate.isVisible() and panel.rows[0].isVisible()
+    qtbot.waitUntil(panel.ready)
     panel.sliders['comedy'].setValue(7);panel.sliders['warmth'].setValue(3);panel.generate.click()
     assert calls[0]['comedy']==7 and calls[0]['warmth']==3 and calls[0]['professionalism']==0
     w.close()
@@ -168,7 +169,7 @@ def test_a_press_away_from_the_chip_still_dismisses_it(qtbot,tmp_path,monkeypatc
     p.offer({'kind':'text','text':'Selected passage'},QPoint(400,200))
     box=p.chip.geometry()
     press(p,QPoint(box.center().x(),box.bottom()+140),monkeypatch)
-    assert not p.chip.isVisible()
+    qtbot.waitUntil(lambda:not p.chip.isVisible())
     w.close()
 
 
@@ -197,7 +198,7 @@ def test_the_menu_rewrite_button_opens_the_chooser_rather_than_rewriting(qtbot,t
     p.offer({'kind':'text','text':'Original passage'},QPoint(400,200));p.expand()
     menu_button(p,'Rewrite').click()
     assert calls==[] and p.style_panel is not None and p.style_panel.isVisible()
-    assert not p.menu.isVisible()
+    qtbot.waitUntil(lambda:not p.menu.isVisible())
     w.close()
 
 
@@ -239,9 +240,11 @@ def test_a_click_away_puts_the_chooser_away(qtbot,tmp_path,monkeypatch):
     w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
     monkeypatch.setattr(w,'run_desktop_action',lambda *a:None)
     p.offer({'kind':'text','text':'Original passage'},QPoint(400,200));p.activate('rewrite')
-    panel=p.style_panel;qtbot.waitUntil(panel.ready)
+    panel=p.style_panel;qtbot.waitUntil(panel.ready);gone=[]
+    panel.closed.connect(lambda:gone.append(1))
     press(p,panel.geometry().bottomRight()+QPoint(200,200),monkeypatch)
-    assert p.style_panel is None and not panel.isVisible()
+    assert p.style_panel is None
+    qtbot.waitUntil(lambda:bool(gone))
     w.close()
 
 
@@ -251,4 +254,69 @@ def test_a_second_rewrite_replaces_the_first_chooser(qtbot,tmp_path,monkeypatch)
     p.offer({'kind':'text','text':'One'},QPoint(400,200));p.activate('rewrite');first=p.style_panel
     p.offer({'kind':'text','text':'Two'},QPoint(500,300));p.activate('rewrite');second=p.style_panel
     assert second is not first and second.isVisible() and not first.isVisible()
+    w.close()
+
+
+def test_windows_rise_into_place_and_settle(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
+    p.offer({'kind':'text','text':'Selected passage'},QPoint(400,200));p.expand()
+    rest=p.menu_motion.slide.endValue()
+    assert p.menu.pos()!=rest and p.menu_motion.slide.state()==popup.QPropertyAnimation.State.Running
+    assert p.menu_motion.slide.startValue().y()-rest.y()==popup.RISE
+    qtbot.waitUntil(lambda:p.menu_motion.slide.state()==popup.QPropertyAnimation.State.Stopped)
+    assert p.menu.pos()==rest and p.menu.windowOpacity()==1
+    w.close()
+
+
+def test_the_rise_stays_inside_the_slack_a_press_is_forgiven():
+    """A window travelling further than the slack would drop a press mid-rise."""
+    assert popup.RISE<popup.CLICK_SLACK+popup.MENU_SLACK
+    assert popup.ENTER<=150 and popup.LEAVE<=150 and popup.GROW<=150
+
+
+def test_reduced_motion_makes_every_window_instant(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup;w.preferences['motion']=False
+    monkeypatch.setattr(w,'run_desktop_action',lambda *a:None)
+    running=popup.QPropertyAnimation.State.Running
+    p.offer({'kind':'text','text':'Selected passage'},QPoint(400,200))
+    assert p.chip.isVisible() and p.chip.windowOpacity()==1 and p.chip_motion.fade.state()!=running
+    p.expand();assert p.menu.isVisible() and p.menu_motion.slide.state()!=running
+    p.activate('rewrite');assert not p.menu.isVisible() and p.style_panel.windowOpacity()==1
+    panel=p.style_panel;qtbot.waitUntil(panel.ready)
+    panel.custom.click();assert panel.grow.state()!=running
+    p.hide();assert not p.chip.isVisible()
+    w.close()
+
+
+def test_a_window_on_its_way_out_is_not_a_target(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
+    p.offer({'kind':'text','text':'Selected passage'},QPoint(400,200));p.expand()
+    qtbot.waitUntil(lambda:p.menu_motion.slide.state()==popup.QPropertyAnimation.State.Stopped)
+    inside=p.menu.geometry().center();p.hide()
+    assert p.menu.isVisible() and not p.mine(inside), 'a fading menu still answered as a target'
+    qtbot.waitUntil(lambda:not p.menu.isVisible())
+    w.close()
+
+
+def test_the_chooser_rearms_when_the_sliders_appear(qtbot,tmp_path,monkeypatch):
+    """Generate lands where Custom was, so the press that revealed it must not run."""
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup;calls=[]
+    monkeypatch.setattr(w,'run_desktop_action',lambda action,context,anchor:calls.append(context))
+    p.offer({'kind':'text','text':'Original passage'},QPoint(400,200));p.activate('rewrite')
+    panel=p.style_panel;qtbot.waitUntil(panel.ready)
+    panel.custom.click();panel.generate.click()
+    assert calls==[]
+    qtbot.waitUntil(panel.ready);panel.generate.click()
+    assert len(calls)==1
+    w.close()
+
+
+def test_the_menu_dismiss_button_fades_the_menu(qtbot,tmp_path,monkeypatch):
+    """clicked passes its checked state, which must not become 'skip the fade'."""
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
+    p.offer({'kind':'text','text':'Selected passage'},QPoint(400,200));p.expand()
+    qtbot.waitUntil(lambda:p.menu_motion.slide.state()==popup.QPropertyAnimation.State.Stopped)
+    menu_button(p,'Dismiss').click()
+    assert p.menu_motion.busy(), 'the menu vanished instead of fading'
+    qtbot.waitUntil(lambda:not p.menu.isVisible())
     w.close()
