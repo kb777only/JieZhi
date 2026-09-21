@@ -2,7 +2,7 @@
 
 All notable changes to JieZhi are documented here.
 
-## Unreleased
+## 0.7.0-alpha.1 — 2026-09-21
 
 - Add an OpenAI-compatible endpoint (`jiezhi-gateway`) so third-party AI workspaces
   can use the phone's NPU: model listing, streamed and whole chat completions,
@@ -10,6 +10,36 @@ All notable changes to JieZhi are documented here.
   Loopback-only, with Host checking and an optional API key.
 - Add a device registry that tracks each attached phone's identity, Hexagon
   capability and connection state, with one client per phone.
+- Rewrite selected text in a chosen style: one button per preset, or Custom with a
+  0-10 slider per style so voices can be blended. Weights reach the model as
+  plain-language clauses, and a style left at zero is dropped from the prompt
+  rather than named with a zero beside it.
+- Lay every host screen out from one spacing, type and control scale
+  (`host/jiezhi/theme.py`): title bands, grouped control rows with one primary
+  action each, guidance in empty lists, and telemetry sparklines collapsed behind
+  a Show graphs toggle. Dark mode is generated from its own token table instead of
+  hex replacements over the light sheet.
+- Fix check boxes drawing no indicator, welcome artwork cut off on the opening
+  screen, the "Appearance & workspace" group title losing its ampersand, and
+  clipped combo and spin box arrows.
+- Fade the selection chip in over 140 ms and make it a compact 40×26 tab.
+- Fix a press at the chip's edge counting as a press outside it, which hid the chip
+  between press and release and swallowed the click. Hover, dismissal and the
+  rewrite chooser now share the same slack.
+- Keep the rewrite style chooser under the pointer where the menu was, ignore
+  presses for 250 ms after it appears, and close it on a click elsewhere or on a
+  second Rewrite.
+- Close an abandoned action menu once the pointer has been away from it for a
+  moment, instead of leaving it over other applications.
+- Fix detected-image capture on scaled displays, where accessibility device pixels
+  were handed to a logical-pixel grab.
+- Let result popups be dragged by their body and closed with Escape, and release
+  them from the session list when they close.
+- Stop tracking a `.venv` symlink committed by accident, which pointed at an
+  absolute path outside the repository and collided with a local virtualenv on
+  checkout.
+
+Host-side only; nothing in this release has been re-validated against the phone.
 
 ## 0.6.0-alpha.1 — 2026-09-20
 
