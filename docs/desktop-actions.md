@@ -12,6 +12,10 @@ straight away, and **Custom…** opens a weight slider per style, from 0 to 10,
 with **Generate** to start. The weights are blended into the instruction sent to
 the phone; a style left at 0 is not mentioned to the model at all, since naming
 it would pull the rewrite toward it. Your last custom weights are remembered.
+The chooser opens in the menu's place, under the pointer, with the heading rather
+than a button beneath it, and it ignores any press for the first quarter second,
+so the click that asked for a rewrite cannot also pick a style. Clicking away
+closes it, and asking for a rewrite again replaces it.
 Rework and Expand ask for a description. Results open beside the pointer with
 Copy, Save and Stop controls. Drag a result by its body to move it, and press
 Escape to close it. Loading/generating status also appears in toasts. Moving the
