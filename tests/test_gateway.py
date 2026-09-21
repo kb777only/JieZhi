@@ -5,7 +5,7 @@ import pytest
 import requests
 
 from jiezhi.devices import DeviceRegistry
-from jiezhi.gateway import Gateway, conversation, slug
+from jiezhi.gateway import Gateway, advice, conversation, slug
 
 
 class FakeClient:
@@ -364,3 +364,23 @@ def test_binding_beyond_loopback_without_a_key_is_refused():
     with pytest.raises(SystemExit) as error:
         main(["--host", "0.0.0.0"])
     assert error.value.code == 2
+
+
+def test_advice_names_the_container_route_when_docker_is_present():
+    lines = "\n".join(advice("127.0.0.1", 11435, "", containers=True))
+    assert "http://127.0.0.1:11435/v1" in lines
+    assert "--network=host" in lines
+    assert "--host 0.0.0.0 --api-key jiezhi --port 11435" in lines
+    assert "host.docker.internal:11435" in lines
+
+
+def test_advice_stays_short_without_containers():
+    lines = advice("127.0.0.1", 11435, "", containers=False)
+    assert len(lines) == 1 and "http://127.0.0.1:11435/v1" in lines[0]
+
+
+def test_advice_for_a_wide_bind_gives_the_container_url_and_the_key():
+    lines = "\n".join(advice("0.0.0.0", 11435, "jiezhi", containers=True))
+    assert "http://127.0.0.1:11435/v1" in lines          # still works on this machine
+    assert "http://host.docker.internal:11435/v1" in lines
+    assert "'jiezhi'" in lines

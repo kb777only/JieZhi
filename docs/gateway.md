@@ -88,6 +88,9 @@ curl http://127.0.0.1:11435/health
 - **The app reports a network error.** Nothing is listening where it looked.
   Check the gateway is still running and on the port you expect
   (`curl http://127.0.0.1:11435/health`, or `ss -ltn | grep 11435`).
+When Docker is running on the machine, the gateway says all of this at startup
+without being asked, including the exact command and URL for the container case.
+
 - **The app runs in a container.** Open WebUI's Docker image is the common
   case: inside the container `127.0.0.1` is the container, not your desktop, so
   the gateway is unreachable no matter what. Either run the container with

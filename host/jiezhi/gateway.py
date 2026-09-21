@@ -17,6 +17,7 @@ visiting from driving the phone through their browser.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import re
@@ -507,6 +508,34 @@ class Gateway:
         self._thread = None
 
 
+def containers_present() -> bool:
+    """Is something on this machine likely to run an app inside a container?
+
+    It matters because a container cannot reach the desktop on 127.0.0.1 — that
+    address is the container itself — and the app reports only a network error.
+    """
+    return any(Path(p).exists() for p in
+               ("/var/run/docker.sock", "/sys/class/net/docker0", "/run/podman/podman.sock"))
+
+
+def advice(host: str, port: int, key: str, containers: bool) -> list[str]:
+    """What to paste into a third-party app, for the setups that are plausible."""
+    reachable = "127.0.0.1" if host == "0.0.0.0" else host
+    lines = [f"JieZhi is serving at http://{reachable}:{port}/v1 — point a third-party app there."]
+    if host in LOCAL_HOSTS:
+        if containers:
+            lines += ["",
+                      "Docker is running here, and an app inside a container cannot reach",
+                      "127.0.0.1 on your desktop. If that is where your app lives, either",
+                      "start its container with --network=host, or stop this and run:",
+                      f"  jiezhi-gateway --host 0.0.0.0 --api-key jiezhi --port {port}",
+                      f"then point the app at http://host.docker.internal:{port}/v1 with that key."]
+    else:
+        lines += [f"An app in a container should use http://host.docker.internal:{port}/v1",
+                  f"Send the key {key!r} as a bearer token; it is required on this address."]
+    return lines
+
+
 def main(argv=None) -> int:
     """Run the endpoint on its own, for apps that only need the phone.
 
@@ -529,20 +558,21 @@ def main(argv=None) -> int:
     if not CONTEXT_RANGE[0] <= args.context <= CONTEXT_RANGE[1]:
         parser.error(f"--context must be between {CONTEXT_RANGE[0]} and {CONTEXT_RANGE[1]}.")
     if args.host not in LOCAL_HOSTS and not args.api_key:
-        parser.error("--host beyond loopback puts the phone on the network; pass --api-key as well.")
+        parser.error("--host beyond loopback puts the phone on the network. Pass a key too, "
+                     f"for example: --host {args.host} --api-key jiezhi")
 
     registry = DeviceRegistry()
     gateway = Gateway(registry, host=args.host, port=args.port, api_key=args.api_key,
                       context=args.context, backend=args.backend, serial=args.serial)
     try:
-        url = gateway.start()
+        gateway.start()
     except OSError as error:
         print(f"Could not listen on {args.host}:{args.port} — {error}")
         print("Something else may already hold that port; pick another with --port.")
         return 1
 
-    print(f"JieZhi is serving at {url}")
-    print("Point a third-party app at that base URL.")
+    for line in advice(args.host, gateway.port, args.api_key, containers_present()):
+        print(line)
     gateway.router.refresh(force=True)
     models = gateway.router.catalog()
     connected = registry.connected()
