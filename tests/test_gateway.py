@@ -5,7 +5,7 @@ import pytest
 import requests
 
 from jiezhi.devices import DeviceRegistry
-from jiezhi.gateway import Gateway, conversation, slug
+from jiezhi.gateway import Gateway, advice, conversation, slug
 
 
 class FakeClient:
@@ -274,3 +274,113 @@ def test_a_developer_role_is_accepted_as_system(gateway):
          {"model": "qwen3-1.7b-q4_0", "messages": [{"role": "developer", "content": "be brief"},
                                                    {"role": "user", "content": "hi"}]})
     assert gateway.registry.client("A").last[0][0] == {"role": "system", "content": "be brief"}
+
+
+def test_the_endpoint_answers_before_any_phone_is_attached():
+    """Open WebUI verifies a connection on save; a dead port reads as a network error."""
+    registry = DeviceRegistry(factory=FakeClient, probe=lambda *a, serial="", timeout=30: "",
+                              enumerate_devices=lambda: [])
+    made = Gateway(registry, port=0)
+    made.start()
+    try:
+        response = requests.get(f"http://127.0.0.1:{made.port}/v1/models", timeout=10)
+        assert response.status_code == 200 and response.json()["data"] == []
+        health = requests.get(f"http://127.0.0.1:{made.port}/health", timeout=10).json()
+        assert health["ready"] is False
+    finally:
+        made.stop()
+
+
+def test_a_phone_plugged_in_after_startup_is_picked_up(monkeypatch):
+    attached = []
+    props = {("A", "ro.soc.model"): "SM8750", ("A", "ro.product.model"): "Xiaomi 15 Ultra"}
+    registry = DeviceRegistry(factory=FakeClient,
+                              probe=lambda *a, serial="", timeout=30: props.get((serial, a[-1]), ""),
+                              enumerate_devices=lambda: attached)
+    monkeypatch.setattr("jiezhi.gateway.read_json", lambda *_: {"A": "stored-token"})
+    made = Gateway(registry, port=0)
+    made.router.rescan_interval = 0
+    made.start()
+    try:
+        assert requests.get(f"http://127.0.0.1:{made.port}/v1/models", timeout=10).json()["data"] == []
+        attached.append({"serial": "A", "state": "device", "description": "A usb:1"})
+        ids = {m["id"] for m in
+               requests.get(f"http://127.0.0.1:{made.port}/v1/models", timeout=10).json()["data"]}
+        assert "qwen3-1.7b-q4_0" in ids
+    finally:
+        made.stop()
+
+
+def test_an_unpaired_phone_is_reported_rather_than_connected(monkeypatch):
+    props = {("A", "ro.soc.model"): "SM8750", ("A", "ro.product.model"): "Xiaomi 15 Ultra"}
+    registry = DeviceRegistry(factory=FakeClient,
+                              probe=lambda *a, serial="", timeout=30: props.get((serial, a[-1]), ""),
+                              enumerate_devices=lambda: [{"serial": "A", "state": "device", "description": "A usb:1"}])
+    monkeypatch.setattr("jiezhi.gateway.read_json", lambda *_: {})
+    made = Gateway(registry, port=0)
+    made.router.rescan_interval = 0
+    made.start()
+    try:
+        health = requests.get(f"http://127.0.0.1:{made.port}/health", timeout=10).json()
+        assert health["ready"] is False and "not paired" in health["trouble"]
+    finally:
+        made.stop()
+
+
+def test_adb_trouble_is_reported_not_raised(monkeypatch):
+    def broken():
+        raise RuntimeError("ADB is missing. Reinstall the JieZhi desktop package.")
+    registry = DeviceRegistry(factory=FakeClient, probe=lambda *a, serial="", timeout=30: "",
+                              enumerate_devices=broken)
+    made = Gateway(registry, port=0)
+    made.router.rescan_interval = 0
+    made.start()
+    try:
+        health = requests.get(f"http://127.0.0.1:{made.port}/health", timeout=10).json()
+        assert "ADB is missing" in health["trouble"]
+        assert requests.get(f"http://127.0.0.1:{made.port}/v1/models", timeout=10).status_code == 200
+    finally:
+        made.stop()
+
+
+def test_binding_beyond_loopback_accepts_its_own_host_header():
+    """Open WebUI in a container reaches the host by a name that is not 127.0.0.1."""
+    made, _ = build()
+    made.stop()
+    registry = made.registry
+    wide = Gateway(registry, host="0.0.0.0", port=0, api_key="secret")
+    wide.start()
+    try:
+        response = requests.get(f"http://127.0.0.1:{wide.port}/v1/models", timeout=10,
+                                headers={"Host": "host.docker.internal:11435",
+                                         "Authorization": "Bearer secret"})
+        assert response.status_code == 200
+    finally:
+        wide.stop()
+
+
+def test_binding_beyond_loopback_without_a_key_is_refused():
+    from jiezhi.gateway import main
+    with pytest.raises(SystemExit) as error:
+        main(["--host", "0.0.0.0"])
+    assert error.value.code == 2
+
+
+def test_advice_names_the_container_route_when_docker_is_present():
+    lines = "\n".join(advice("127.0.0.1", 11435, "", containers=True))
+    assert "http://127.0.0.1:11435/v1" in lines
+    assert "--network=host" in lines
+    assert "--host 0.0.0.0 --api-key jiezhi --port 11435" in lines
+    assert "host.docker.internal:11435" in lines
+
+
+def test_advice_stays_short_without_containers():
+    lines = advice("127.0.0.1", 11435, "", containers=False)
+    assert len(lines) == 1 and "http://127.0.0.1:11435/v1" in lines[0]
+
+
+def test_advice_for_a_wide_bind_gives_the_container_url_and_the_key():
+    lines = "\n".join(advice("0.0.0.0", 11435, "jiezhi", containers=True))
+    assert "http://127.0.0.1:11435/v1" in lines          # still works on this machine
+    assert "http://host.docker.internal:11435/v1" in lines
+    assert "'jiezhi'" in lines
