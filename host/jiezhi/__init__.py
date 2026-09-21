@@ -1,3 +1,3 @@
 """JieZhi: a desktop interface to phone-local inference."""
 
-__version__ = "0.7.0-alpha.1"
+__version__ = "0.8.0-alpha.1"

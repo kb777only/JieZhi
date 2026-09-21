@@ -7,12 +7,12 @@ connected by USB. The desktop owns the interface and conversation history. The
 Android app owns model storage and inference. No desktop inference or cloud chat
 provider is used.
 
-This repository contains the `v0.7.0-alpha.1` source: the native
+This repository contains the `v0.8.0-alpha.1` source: the native
 Linux host, Android inference client, authenticated USB protocol, model discovery
 and fit recommendations, local document/project context, guarded PC tools, live
 phone telemetry, a saved node canvas, phone-local image/video diffusion, an
-OpenAI-compatible endpoint for third-party apps, tests, build scripts, and
-packaging flow.
+OpenAI-compatible endpoint for third-party apps, in-app updates, tests, build
+scripts, and packaging flow.
 
 ![JieZhi sends a local AI model's thoughts from a phone to a desktop through USB](assets/generated/jiezhi-logo-usb-thoughts-v4.png)
 
