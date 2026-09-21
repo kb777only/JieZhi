@@ -22,6 +22,17 @@ Escape to close it. Loading/generating status also appears in toasts. Moving the
 pointer away from the action menu closes it after a moment, so an unused menu
 does not stay on screen until you click.
 
+The chip, the menu, the style chooser, results and toasts rise a little as they
+fade in and fade out as they go, and the chooser grows into place when the
+sliders appear. Every one of those runs in 150 ms or less, because these windows
+open under the pointer while you are still moving: anything slower stops reading
+as polish and starts reading as the app being slow to answer. Each window is
+shown at full size from the first frame, so its buttons can be clicked while it
+is still arriving, and a window that is fading out stops counting as a target so
+a click lands on whatever is behind it. The area selector is not animated, since
+a fade there would delay the drag you are about to start. **Reduced motion** in
+Settings stills all of it.
+
 ## Settings and models
 
 Open the corner gear, then **Desktop selection assistant**. Enable/disable the

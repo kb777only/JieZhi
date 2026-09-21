@@ -22,16 +22,18 @@ PROMPTS={
 
 class DesktopActionsView:
     def build_desktop_settings(self,col):
-        from .gui import label,button
+        from .gui import label,button,row,wide
+        from .theme import MD
         box=QGroupBox('Desktop selection assistant');form=QVBoxLayout(box)
         self.desktop_enabled=QCheckBox('Show JieZhi when I select text or right-click an image');self.desktop_enabled.setChecked(self.preferences.get('desktop_popup',True));form.addWidget(self.desktop_enabled)
         self.desktop_fallback=QCheckBox('Offer area selection when an app does not expose its image');self.desktop_fallback.setChecked(self.preferences.get('image_area_fallback',True));form.addWidget(self.desktop_fallback)
         form.addWidget(label('Hover over the icon for 350 ms to see actions. Selection detection uses X11; images use accessibility when available, with area selection as a fallback. Content is sent to your phone only after you choose an action.','muted',True))
-        row=QHBoxLayout();row.addWidget(label('Translate into'));self.desktop_language=QLineEdit(self.preferences.get('translation_language','English'));row.addWidget(self.desktop_language);form.addLayout(row)
+        self.desktop_language=QLineEdit(self.preferences.get('translation_language','English'))
+        form.addLayout(row(label('Translate into','muted'),wide(self.desktop_language,240),spacing=MD))
         self.desktop_model_choices={}
         for action,title in {**TEXT_ACTIONS,**IMAGE_ACTIONS}.items():
-            row=QHBoxLayout();row.addWidget(label(title));combo=QComboBox();combo.setMinimumWidth(240);row.addWidget(combo,1);form.addLayout(row);self.desktop_model_choices[action]=combo
-        row=QHBoxLayout();row.addWidget(button('Refresh available models',self.refresh_desktop_models));row.addWidget(button('Get NPU upscaler',self.desktop_get_upscaler));form.addLayout(row)
+            combo=QComboBox();form.addLayout(row(label(title,'muted'),wide(combo,240),spacing=MD));self.desktop_model_choices[action]=combo
+        form.addLayout(row(button('Refresh available models',self.refresh_desktop_models),button('Get NPU upscaler',self.desktop_get_upscaler)))
         self.desktop_settings_note=label('Text actions default to the current phone model. Choose media models after importing them through Flow canvas.','muted',True);form.addWidget(self.desktop_settings_note);col.addWidget(box)
         self.desktop_media_models=[];self.fill_desktop_models()
         self.desktop_enabled.toggled.connect(self.desktop_settings_changed);self.desktop_fallback.toggled.connect(self.desktop_settings_changed);self.desktop_language.editingFinished.connect(self.desktop_settings_changed)
@@ -85,7 +87,8 @@ class DesktopActionsView:
             self.preferences['rewrite_style_weights']=dict(style);save_json(self.preferences_path,self.preferences)
             named=summary(style)
             if named:title=title+' · '+named
-        result=ResultPopup(title,anchor);self.quick_results.append(result);result.setStyleSheet(self.styleSheet());self.quick_result=result;result.show();self.quick_cancel.clear()
+        result=ResultPopup(title,anchor,moving=self.desktop_popup.moving);self.quick_results.append(result);result.setStyleSheet(self.styleSheet())
+        self.quick_result=result;result.motion.enter(result.moving);self.quick_cancel.clear()
         def forget():
             if result in self.quick_results:self.quick_results.remove(result)
             result.deleteLater()

@@ -16,6 +16,14 @@ CLICK_SLACK=6
 MENU_SLACK=40
 STYLE_ARM=.250
 
+# Motion. Everything here opens under the pointer while the user is mid-gesture,
+# so the budget is small: past about 150 ms a fade stops reading as polish and
+# starts reading as the app being slow to answer.
+ENTER=140
+LEAVE=110
+RISE=10
+GROW=150
+
 TEXT_ACTIONS={'summarize':'Summarize','rewrite':'Rewrite','continue':'Continue writing','explain':'Explain','translate':'Translate','generate':'Generate as an image'}
 IMAGE_ACTIONS={'rework':'Rework image','upscale':'Upscale 2×','expand':'Expand image','variations':'Create a variation'}
 
@@ -28,6 +36,44 @@ def place(widget,anchor,offset=QPoint(18,18)):
 
 def near(widget,cursor,pad):
     return widget.isVisible() and widget.geometry().adjusted(-pad,-pad,pad,pad).contains(cursor)
+
+
+class Motion:
+    """Fade and a short rise for one frameless window.
+
+    The window is shown at full size straight away and only its opacity and
+    position are animated, so its buttons are hittable from the first frame.
+    RISE stays well inside MENU_SLACK, or a press during the rise would miss.
+    """
+    def __init__(self,widget,parent):
+        self.widget=widget;self.leaving=False;self.then=None
+        self.fade=QPropertyAnimation(widget,b'windowOpacity',parent);self.fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.slide=QPropertyAnimation(widget,b'pos',parent);self.slide.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.fade.finished.connect(self.settle)
+    def stop(self):
+        # Qt does not emit finished() on stop(), so settle() cannot fire here.
+        self.leaving=False;self.fade.stop();self.slide.stop()
+    def enter(self,moving=True,duration=ENTER):
+        self.stop();self.widget.setWindowOpacity(1.0)
+        if not moving:self.widget.show();return
+        rest=self.widget.pos()
+        self.widget.setWindowOpacity(0.0);self.widget.move(rest.x(),rest.y()+RISE);self.widget.show()
+        self.fade.setDuration(duration);self.fade.setStartValue(0.0);self.fade.setEndValue(1.0);self.fade.start()
+        self.slide.setDuration(duration);self.slide.setStartValue(QPoint(rest.x(),rest.y()+RISE));self.slide.setEndValue(rest);self.slide.start()
+    def leave(self,moving=True,then=None):
+        if not self.widget.isVisible() or self.leaving:return
+        self.stop();self.then=then
+        if not moving:self.settle(now=True);return
+        self.leaving=True
+        self.fade.setDuration(LEAVE);self.fade.setStartValue(self.widget.windowOpacity());self.fade.setEndValue(0.0);self.fade.start()
+    def settle(self,now=False):
+        if not (self.leaving or now):return
+        self.leaving=False;self.widget.hide();self.widget.setWindowOpacity(1.0)
+        then=self.then;self.then=None
+        if then:then()
+    def busy(self):
+        """Still on screen, but on its way out and no longer a target."""
+        return self.leaving
 
 
 def floating(widget,passive=False):
@@ -68,8 +114,8 @@ class StylePanel(QWidget):
     """Preset styles, or sliders that blend them. The generated prompt stays hidden."""
     chosen=Signal(dict)
     closed=Signal()
-    def __init__(self,weights,spot):
-        super().__init__();floating(self);self.setFixedWidth(300);self.armed=0.0
+    def __init__(self,weights,spot,moving=True):
+        super().__init__();floating(self);self.setFixedWidth(300);self.armed=0.0;self.moving=moving
         box=QVBoxLayout(self);box.setContentsMargins(14,14,14,14);box.addWidget(QLabel('Rewrite as'))
         self.presets=[]
         for key,label,_ in STYLE_DIMENSIONS:
@@ -89,40 +135,52 @@ class StylePanel(QWidget):
         # The panel takes the menu's place under the pointer, so it opens with the
         # heading there rather than a button, and ignores a press that lands as it maps.
         self.adjustSize();place(self,spot,QPoint(-24,-12))
+        self.motion=Motion(self,self)
+        self.grow=QPropertyAnimation(self,b'geometry',self);self.grow.setDuration(GROW);self.grow.setEasingCurve(QEasingCurve.Type.OutCubic)
     def showEvent(self,event):
         self.armed=time.monotonic()+STYLE_ARM;super().showEvent(event)
     def ready(self):return time.monotonic()>=self.armed
     def pick(self,weights):
         if self.ready():self.chosen.emit(weights)
     def leave(self):
-        if self.ready():self.close()
+        if self.ready():self.motion.leave(self.moving,self.close)
     def show_sliders(self):
         if not self.ready():return
+        before=self.geometry()
         for row in self.rows:row.show()
         for b in self.presets:b.hide()
         self.custom.hide();self.generate.show();self.adjustSize()
+        # Generate lands roughly where Custom just was, so the panel arms again
+        # against a press still in flight, exactly as it does when it opens.
+        self.armed=time.monotonic()+STYLE_ARM
+        after=self.geometry()
+        if not self.moving or after==before:return
+        self.setGeometry(before);self.grow.setStartValue(before);self.grow.setEndValue(after);self.grow.start()
     def weights(self):return {key:slider.value() for key,slider in self.sliders.items()}
     def closeEvent(self,event):
         self.closed.emit();super().closeEvent(event)
     def keyPressEvent(self,event):
-        if event.key()==Qt.Key.Key_Escape:self.close()
+        if event.key()==Qt.Key.Key_Escape:self.motion.leave(self.moving,self.close)
         else:super().keyPressEvent(event)
 
 
 class ResultPopup(QWidget):
     stop_requested=Signal()
     closed=Signal()
-    def __init__(self,title,anchor,parent=None):
-        super().__init__(parent);floating(self);self.resize(500,410);self.path=None;self.drag=None
+    def __init__(self,title,anchor,parent=None,moving=True):
+        super().__init__(parent);floating(self);self.resize(500,410);self.path=None;self.drag=None;self.moving=moving
         box=QVBoxLayout(self);box.setContentsMargins(18,18,18,18)
-        row=QHBoxLayout();self.title=QLabel(title);row.addWidget(self.title,1);close=QPushButton('×');close.setFixedWidth(35);close.clicked.connect(self.close);row.addWidget(close);box.addLayout(row)
+        row=QHBoxLayout();self.title=QLabel(title);row.addWidget(self.title,1);close=QPushButton('×');close.setFixedWidth(35);close.clicked.connect(self.dismiss);row.addWidget(close);box.addLayout(row)
         self.status=QLabel('Preparing…');self.status.setWordWrap(True);box.addWidget(self.status)
         self.text=QTextBrowser();self.text.setOpenExternalLinks(False);box.addWidget(self.text,1)
         self.picture=QLabel();self.picture.setAlignment(Qt.AlignmentFlag.AlignCenter);self.picture.hide();box.addWidget(self.picture,1)
         row=QHBoxLayout();self.copy=QPushButton('Copy');self.copy.clicked.connect(self.copy_result);row.addWidget(self.copy)
         self.save=QPushButton('Save…');self.save.clicked.connect(self.save_result);row.addWidget(self.save)
         self.stop=QPushButton('Stop');self.stop.clicked.connect(self.stop_requested);row.addWidget(self.stop);box.addLayout(row)
-        self.copy.setEnabled(False);self.save.setEnabled(False);place(self,anchor)
+        self.copy.setEnabled(False);self.save.setEnabled(False);place(self,anchor);self.motion=Motion(self,self)
+    def dismiss(self):
+        # A result the user waved away fades; a result torn down with the app does not.
+        self.motion.leave(self.moving,self.close)
     def show_image(self,path):
         self.path=Path(path);self.text.hide();self.picture.show();self.picture.setPixmap(QPixmap(str(path)).scaled(QSize(455,285),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation));self.copy.setEnabled(True);self.save.setEnabled(True)
     def copy_result(self):
@@ -138,11 +196,12 @@ class ResultPopup(QWidget):
     def closeEvent(self,event):
         self.closed.emit();super().closeEvent(event)
     def keyPressEvent(self,event):
-        if event.key()==Qt.Key.Key_Escape:self.close()
+        if event.key()==Qt.Key.Key_Escape:self.dismiss()
         else:super().keyPressEvent(event)
     def mousePressEvent(self,event):
         # A frameless result has no title bar, so its body drags the window.
-        if event.button()==Qt.MouseButton.LeftButton:self.drag=event.globalPosition().toPoint()-self.frameGeometry().topLeft()
+        # A drag begun mid-entry wins: the rise stops rather than fighting the pointer.
+        if event.button()==Qt.MouseButton.LeftButton:self.motion.slide.stop();self.drag=event.globalPosition().toPoint()-self.frameGeometry().topLeft()
     def mouseMoveEvent(self,event):
         if self.drag is not None and event.buttons()&Qt.MouseButton.LeftButton:self.move(event.globalPosition().toPoint()-self.drag)
     def mouseReleaseEvent(self,event):
@@ -153,10 +212,11 @@ class DesktopPopup:
     def __init__(self,host):
         self.host=host;self.pointer=None;self.previous_mask=0;self.hover_since=None;self.context=None;self.anchor=QPoint();self.last_text='';self.expires=0;self.probing=False;self.menu_left=None;self.style_panel=None
         self.chip=QPushButton();self.chip.setObjectName('chip');floating(self.chip,True);self.chip.setFixedSize(CHIP_SIZE);self.chip.setIcon(QIcon(str(asset('jiezhi.svg'))));self.chip.setIconSize(CHIP_ICON);self.chip.setToolTip('Hover for 350 ms for JieZhi actions');self.chip.clicked.connect(self.expand)
-        self.fade=QPropertyAnimation(self.chip,b'windowOpacity',host);self.fade.setDuration(CHIP_FADE);self.fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.chip_motion=Motion(self.chip,host)
         self.menu=QWidget();floating(self.menu);self.menu.setFixedWidth(240);self.menu_box=QVBoxLayout(self.menu);self.menu_box.setContentsMargins(12,12,12,12)
         self.toast=QLabel();floating(self.toast,True);self.toast.setMargin(14);self.toast.setWordWrap(True);self.toast.setMaximumWidth(460)
-        self.toast_timer=QTimer(host);self.toast_timer.setSingleShot(True);self.toast_timer.timeout.connect(self.toast.hide)
+        self.menu_motion=Motion(self.menu,host);self.toast_motion=Motion(self.toast,host)
+        self.toast_timer=QTimer(host);self.toast_timer.setSingleShot(True);self.toast_timer.timeout.connect(lambda:self.toast_motion.leave(self.moving))
         self.settle=QTimer(host);self.settle.setSingleShot(True);self.settle.setInterval(180);self.settle.timeout.connect(self.selection_ready)
         self.timer=QTimer(host);self.timer.setInterval(40);self.timer.timeout.connect(self.poll)
         QApplication.clipboard().selectionChanged.connect(self.selection_changed)
@@ -169,7 +229,11 @@ class DesktopPopup:
             try:self.pointer=X11Pointer()
             except Exception:enabled=False
         if enabled:self.timer.start()
-        else:self.timer.stop();self.settle.stop();self.dismiss_style();self.hide()
+        else:self.timer.stop();self.settle.stop();self.dismiss_style();self.hide(False)
+    @property
+    def moving(self):
+        """Settings' reduced motion switch also stills these windows."""
+        return bool(self.host.preferences.get('motion',True))
     def owns(self,window,cursor,pad=CLICK_SLACK):
         """Is the pointer on this window of ours? Qt is asked first, then the geometry
         with a little slack: a press is seen up to one poll late, and by then the pointer
@@ -177,9 +241,14 @@ class DesktopPopup:
         widget=QApplication.widgetAt(cursor)
         if widget is not None and widget.window() is window:return True
         return near(window,cursor,pad)
+    def live(self,window,motion,cursor,pad=CLICK_SLACK):
+        return not motion.busy() and self.owns(window,cursor,pad)
     def mine(self,cursor,pad=CLICK_SLACK):
-        return self.owns(self.chip,cursor,pad) or self.owns(self.menu,cursor,pad)
-    def hide(self):self.fade.stop();self.chip.hide();self.menu.hide();self.hover_since=None;self.menu_left=None;self.context=None
+        return self.live(self.chip,self.chip_motion,cursor,pad) or self.live(self.menu,self.menu_motion,cursor,pad)
+    def hide(self,moving=None):
+        moving=self.moving if moving is None else moving
+        self.chip_motion.leave(moving);self.menu_motion.leave(moving)
+        self.hover_since=None;self.menu_left=None;self.context=None
     def selection_changed(self):
         if self.timer.isActive() and not QApplication.clipboard().ownsSelection():self.settle.start()
     def selection_ready(self):
@@ -192,10 +261,11 @@ class DesktopPopup:
         if text:
             self.last_text=text;self.offer({'kind':'text','text':text[:32000]},QCursor.pos())
     def offer(self,context,anchor):
-        self.hide();self.context=context;self.anchor=QPoint(anchor);place(self.chip,anchor)
-        # The chip appears over someone else's window, so it fades in rather than snapping on.
-        self.chip.setWindowOpacity(0.0);self.chip.show();self.chip.raise_()
-        self.fade.setStartValue(0.0);self.fade.setEndValue(1.0);self.fade.start()
+        # The old chip goes at once rather than fading out somewhere else while
+        # the new one rises: two chips on screen reads as a glitch, not motion.
+        self.hide(False);self.context=context;self.anchor=QPoint(anchor);place(self.chip,anchor)
+        # The chip appears over someone else's window, so it rises in rather than snapping on.
+        self.chip_motion.enter(self.moving,CHIP_FADE);self.chip.raise_()
         self.expires=time.monotonic()+12
     def poll(self):
         if not self.pointer:return
@@ -209,13 +279,13 @@ class DesktopPopup:
             if not self.mine(cursor):self.hide()
             panel=self.style_panel
             # A click anywhere else puts the chooser away, the way the menu behaves.
-            if panel is not None and panel.isVisible() and panel.ready() and not self.owns(panel,cursor):self.dismiss_style()
+            if panel is not None and panel.isVisible() and panel.ready() and not self.owns(panel,cursor):self.dismiss_style(self.moving)
         self.previous_mask=mask
-        if self.menu.isVisible():
+        if self.menu.isVisible() and not self.menu_motion.busy():
             if self.mine(cursor,MENU_SLACK):self.menu_left=None
             elif self.menu_left is None:self.menu_left=time.monotonic()
             elif time.monotonic()-self.menu_left>=.9:self.hide()
-        if self.chip.isVisible() and not self.menu.isVisible():
+        if self.chip.isVisible() and not self.chip_motion.busy() and not self.menu.isVisible():
             if near(self.chip,cursor,CLICK_SLACK):
                 if self.hover_since is None:self.hover_since=time.monotonic()
                 elif time.monotonic()-self.hover_since>=.350:self.expand()
@@ -244,8 +314,11 @@ class DesktopPopup:
         actions=TEXT_ACTIONS if self.context['kind']=='text' else IMAGE_ACTIONS
         for key,title in actions.items():
             b=QPushButton(title);b.setEnabled(not self.host.busy);b.clicked.connect(lambda checked=False,k=key:self.activate(k));self.menu_box.addWidget(b)
-        close=QPushButton('Dismiss');close.clicked.connect(self.hide);self.menu_box.addWidget(close)
-        self.menu_left=None;self.menu.adjustSize();place(self.menu,self.chip.pos()+QPoint(30,-18));self.menu.show();self.menu.raise_()
+        # Not connect(self.hide): Qt would pass the button's checked state as `moving`
+        # and dismiss the menu instantly instead of fading it.
+        close=QPushButton('Dismiss');close.clicked.connect(lambda:self.hide());self.menu_box.addWidget(close)
+        self.menu_left=None;self.menu.adjustSize();place(self.menu,self.chip.pos()+QPoint(30,-18))
+        self.menu_motion.enter(self.moving);self.menu.raise_()
     def activate(self,action):
         if self.host.busy:self.notify('JieZhi is busy · finish or stop the current task first',self.anchor,2500);return
         context=dict(self.context);anchor=QPoint(self.anchor);spot=QCursor.pos();self.hide()
@@ -269,23 +342,28 @@ class DesktopPopup:
         """Rewrite always asks for a style first. The chooser opens where the menu was,
         so it is where the pointer already is rather than back at the selection."""
         self.dismiss_style()
-        panel=StylePanel(self.host.preferences.get('rewrite_style_weights',{}),spot or QCursor.pos())
+        panel=StylePanel(self.host.preferences.get('rewrite_style_weights',{}),spot or QCursor.pos(),self.moving)
         panel.setStyleSheet(self.host.styleSheet())
         def run(weights):
             self.dismiss_style();self.host.run_desktop_action('rewrite',{**context,'style':weights},anchor)
         def gone():
             if self.style_panel is panel:self.style_panel=None
         panel.chosen.connect(run);panel.closed.connect(gone)
-        self.style_panel=panel;panel.show();panel.raise_();panel.activateWindow()
+        self.style_panel=panel;panel.motion.enter(self.moving);panel.raise_();panel.activateWindow()
         return panel
-    def dismiss_style(self):
+    def dismiss_style(self,moving=False):
         panel=self.style_panel;self.style_panel=None
-        if panel is not None:panel.close();panel.deleteLater()
+        if panel is None:return
+        def done():panel.close();panel.deleteLater()
+        if moving and panel.isVisible():panel.motion.leave(True,done)
+        else:done()
     def select_area(self,anchor,done):
         self.selector=AreaSelector(anchor);self.selector.selected.connect(done);self.selector.show();self.selector.activateWindow()
     def notify(self,text,anchor,timeout=0):
-        self.toast_timer.stop();self.toast.setText(text);self.toast.adjustSize();place(self.toast,anchor+QPoint(0,-75));self.toast.show();self.toast.raise_()
+        self.toast_timer.stop();self.toast.setText(text);self.toast.adjustSize();place(self.toast,anchor+QPoint(0,-75))
+        if not self.toast.isVisible() or self.toast_motion.busy():self.toast_motion.enter(self.moving)
+        self.toast.raise_()
         if timeout:self.toast_timer.start(timeout)
     def close(self):
-        self.timer.stop();self.settle.stop();self.toast_timer.stop();self.dismiss_style();self.hide();self.toast.hide()
+        self.timer.stop();self.settle.stop();self.toast_timer.stop();self.dismiss_style();self.hide(False);self.toast_motion.leave(False)
         if self.pointer:self.pointer.close();self.pointer=None
