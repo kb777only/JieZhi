@@ -3,6 +3,7 @@ from jiezhi.gui import Window
 import jiezhi.gui as gui
 import jiezhi.hub as hub
 import jiezhi.desktop_popup as popup
+import jiezhi.desktop_styles as styles
 
 
 def window(qtbot,tmp_path,monkeypatch):
@@ -102,3 +103,42 @@ def test_chip_is_compact_and_fades_in(qtbot,tmp_path,monkeypatch):
     qtbot.waitUntil(lambda:p.fade.state()==popup.QPropertyAnimation.State.Stopped)
     assert p.chip.windowOpacity()==1
     w.close()
+
+
+def test_rewrite_asks_for_a_style_before_running(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup;calls=[]
+    monkeypatch.setattr(w,'run_desktop_action',lambda action,context,anchor:calls.append((action,context)))
+    p.offer({'kind':'text','text':'Original passage'},QPoint(400,200));p.activate('rewrite')
+    assert calls==[] and p.style_panel.isVisible()
+    keys=[key for key,_,_ in styles.STYLE_DIMENSIONS]
+    p.style_panel.presets[keys.index('professionalism')].click()
+    assert calls[0][0]=='rewrite'
+    assert calls[0][1]['style']['professionalism']==styles.MAX_WEIGHT and calls[0][1]['style']['comedy']==0
+    w.close()
+
+
+def test_custom_reveals_sliders_and_generates_a_blend(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup;calls=[]
+    monkeypatch.setattr(w,'run_desktop_action',lambda action,context,anchor:calls.append(context['style']))
+    p.offer({'kind':'text','text':'Original passage'},QPoint(400,200));p.activate('rewrite')
+    panel=p.style_panel;assert not panel.generate.isVisible()
+    panel.custom.click();assert panel.generate.isVisible() and panel.rows[0].isVisible()
+    panel.sliders['comedy'].setValue(7);panel.sliders['warmth'].setValue(3);panel.generate.click()
+    assert calls[0]['comedy']==7 and calls[0]['warmth']==3 and calls[0]['professionalism']==0
+    w.close()
+
+
+def test_rewrite_style_shapes_the_prompt_and_is_remembered(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch)
+    status={'loaded_id':'a','context_size':8192,'models':[{'id':'a','name':'A'}]}
+    w.current_status=status;w.client.status=lambda:status;sent=[]
+    def chat(messages,emit,max_tokens):
+        sent.extend(messages);emit({'type':'done','profile':{'tokens_per_second':1}})
+    w.client.chat=chat;monkeypatch.setattr(w,'update_status',lambda s:None)
+    monkeypatch.setattr(w.desktop_popup,'notify',lambda text,*a:None)
+    w.run_desktop_action('rewrite',{'kind':'text','text':'Passage','style':{'professionalism':10,'comedy':0}},QPoint(500,300))
+    qtbot.waitUntil(lambda:not w.busy)
+    assert 'formal professional register' in sent[0]['content'] and 'comed' not in sent[0]['content'].lower()
+    assert w.preferences['rewrite_style_weights']['professionalism']==10
+    assert 'Professional' in w.quick_result.title.text()
+    w.quick_result.close();w.close()

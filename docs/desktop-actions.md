@@ -7,6 +7,11 @@ minimized. Selecting content alone does not start inference or send it to the ph
 
 Text actions are Summarize, Rewrite, Continue writing, Explain, Translate and
 Generate image. Image actions are Rework, Upscale 2×, Expand and Create variation.
+Rewrite asks for a style first: a button for each style rewrites in that voice
+straight away, and **Custom…** opens a weight slider per style, from 0 to 10,
+with **Generate** to start. The weights are blended into the instruction sent to
+the phone; a style left at 0 is not mentioned to the model at all, since naming
+it would pull the rewrite toward it. Your last custom weights are remembered.
 Rework and Expand ask for a description. Results open beside the pointer with
 Copy, Save and Stop controls. Drag a result by its body to move it, and press
 Escape to close it. Loading/generating status also appears in toasts. Moving the
