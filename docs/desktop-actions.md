@@ -1,14 +1,17 @@
 # Desktop selection assistant
 
 Keep JieZhi running and your phone connected. On the tested Deepin X11 desktop,
-select text in another app or right-click an image. A JieZhi icon appears next to
-the pointer. Hover for **350 ms** to expand its action menu. The host can remain
+select text in another app or right-click an image. A small JieZhi chip fades in
+next to the pointer. Hover for **350 ms** to expand its action menu. The host can remain
 minimized. Selecting content alone does not start inference or send it to the phone.
 
 Text actions are Summarize, Rewrite, Continue writing, Explain, Translate and
 Generate image. Image actions are Rework, Upscale 2×, Expand and Create variation.
 Rework and Expand ask for a description. Results open beside the pointer with
-Copy, Save and Stop controls. Loading/generating status also appears in toasts.
+Copy, Save and Stop controls. Drag a result by its body to move it, and press
+Escape to close it. Loading/generating status also appears in toasts. Moving the
+pointer away from the action menu closes it after a moment, so an unused menu
+does not stay on screen until you click.
 
 ## Settings and models
 

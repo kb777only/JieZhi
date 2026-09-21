@@ -511,5 +511,5 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, WorkflowView, Hu
         if not self.telemetry_panel.shutdown():
             event.ignore(); QTimer.singleShot(250, self.close); return
         self.desktop_popup.close()
-        for popup in self.quick_results:popup.close()
+        for popup in list(self.quick_results):popup.close()
         self.client.disconnect(); event.accept()
