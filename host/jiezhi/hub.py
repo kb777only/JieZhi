@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import struct
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -212,8 +213,11 @@ class Hub:
             partial.unlink()
             raise RuntimeError("Model checksum mismatch. The incomplete download was discarded; please retry.")
         with partial.open("rb") as stream:
-            if stream.read(4) != b"GGUF":
-                partial.unlink(); raise RuntimeError("The downloaded file is not a GGUF model.")
+            prefix=stream.read(8)
+            fmt=file.get('format','gguf')
+            valid=(len(prefix)==8 and 2<=struct.unpack('<Q',prefix)[0]<=min(64*1024**2,size-9)) if fmt=='safetensors' else prefix[:2]==b'PK' if fmt=='qnn' else True if fmt=='data' else prefix[:4]==b'GGUF'
+            if not valid:
+                partial.unlink(); raise RuntimeError("The downloaded file has an invalid model format.")
         partial.replace(target)
         save_json(target.with_suffix(".source.json"), file)
         progress(100, "Downloaded and verified on this PC")

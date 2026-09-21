@@ -54,3 +54,33 @@ readings are JSON null. Stream events are SDK text callbacks, not verified token
 IDs. Model load/unload clears the previous completion profile. CPU counters,
 KGSL availability and current thermal-HAL sensors are collected separately using
 constant read-only ADB commands; they are not supplied by this endpoint.
+
+## Media extension (0.6 alpha)
+
+All `/v1/media` routes require the same paired Bearer session token as text routes.
+
+- `GET /media`: native-runtime availability, backends `cpu`/`npu`, media library and job.
+- `POST /media/uploads`: `{id: sha256, name, size, format}` (`gguf`/`safetensors`/`qnn`/`data`),
+  returns `{complete, offset}`. `PUT /media/uploads/:id` appends at `X-Offset` with
+  a bounded Content-Length. `POST /media/commit` verifies full size/hash and format.
+- `POST /media/bundles`: registers a Neodragon bundle from verified `data` IDs
+  and allowlisted component paths. QNN image ZIPs are validated and extracted
+  during commit. Model paths remain private to the client.
+- `POST /media/images`: authenticated PNG/JPEG image body (at most 16 MiB and
+  2048 pixels per side), re-encoded to a private PNG; returns an input result reference.
+- `POST /media/generate`: kind, model_id, prompt, negative, width, height, steps,
+  seed, cfg, backend. Video also takes vae_id, encoder_id, optional vision_id,
+  frames and fps. Optional init_result references a generated PNG owned by the
+  phone, including an image uploaded through `/media/images`. Image `operation` is
+  `generate`, `expand` or `upscale`; `strength` controls img2img generation.
+  Upscale uses a QuickSRNet `data` model or the graph in a Neodragon bundle.
+  Filenames/CLI commands are never accepted from the host.
+- `GET /media/job`: job id and `running`, `complete`, `failed` or `cancelled`; a
+  bounded native log accompanies state. Complete includes result, size and sha256.
+- `POST /media/cancel`: stops the native process, forcibly after a grace period.
+- `GET /media/results/:name`: authenticated PNG/AVI/MP4 stream; host verifies size/hash.
+
+Media claims the same busy guard as text inference and unloads the text model
+before spawning diffusion. No simultaneous LLM/diffusion run is admitted. Process
+output is bounded; a 30-minute watchdog cancels runaway generation. Uploads persist
+for resume; job state is session-local, with outputs retained in private app storage.

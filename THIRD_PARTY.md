@@ -2,6 +2,21 @@
 
 The prototype depends on:
 
+- Nightmare Mobile v1.5.533 / LocalDream NPU media backend (CC BY-NC 4.0):
+  https://github.com/AbrahamPaulJ/nightmare-mobile and
+  https://github.com/xororz/local-dream . Selected Kotlin video pipeline files are
+  adapted with attribution in `third_party/nightmare-mobile`. Native components
+  are staged from a checksum-pinned upstream release. This NPU component is
+  **non-commercial licensed**, separately from JieZhi's MIT code. Qualcomm QNN
+  runtime and model terms remain separate; the prototype build includes this
+  component for evaluation. See the original LICENSE/NOTICE in that directory.
+
+- stable-diffusion.cpp (MIT), pinned to `c678dfe704a2230342376b46add9c8ca736a653d`:
+  https://github.com/leejet/stable-diffusion.cpp . The Android CPU executable also
+  includes its pinned GGML, oniguruma, utf8proc and darts-clone dependencies.
+  Their license texts are included in the APK and desktop distribution. Embedded
+  header notices cover stb, miniz, json and zip; WebP/WebM are disabled in this build.
+
 - Qualcomm GenieX Android 0.7.0: https://github.com/qualcomm/GenieX . The published
   Maven artifact declares BSD-3-Clause and Qualcomm Terms of Use. Bundled native
   runtimes and their notices remain subject to their respective terms.

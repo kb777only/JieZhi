@@ -18,12 +18,13 @@ class ModelResultDelegate(QStyledItemDelegate):
         painter.save();rect=option.rect.adjusted(10,5,-10,-5)
         selected=bool(option.state & QStyle.StateFlag.State_Selected)
         font=option.font;font.setPointSizeF(10.5);font.setBold(True);painter.setFont(font)
-        painter.setPen(QColor('#284878') if selected else QColor('#23334e'))
+        dark=getattr(option.widget.window(),'dark',False)
+        painter.setPen(QColor('#dce7ff') if dark else QColor('#284878') if selected else QColor('#23334e'))
         painter.drawText(QRect(rect.x(),rect.y(),rect.width(),22),Qt.AlignmentFlag.AlignVCenter,QFontMetrics(font).elidedText(name,Qt.TextElideMode.ElideRight,rect.width()))
         font.setBold(False);font.setPointSizeF(9);painter.setFont(font)
         data=index.data(Qt.ItemDataRole.UserRole+1) or {}
         for i,line in enumerate(data.get('lines',[])):
-            painter.setPen(QColor('#3267d5') if i==0 and data.get('recommended') else QColor('#667b97'))
+            painter.setPen(QColor('#3267d5') if i==0 and data.get('recommended') else QColor('#a8b7d0' if dark else '#667b97'))
             painter.drawText(QRect(rect.x(),rect.y()+24+i*19,rect.width(),19),Qt.AlignmentFlag.AlignVCenter,QFontMetrics(font).elidedText(line,Qt.TextElideMode.ElideRight,rect.width()))
         painter.restore()
 
@@ -37,9 +38,8 @@ class HubView:
         layout = self.page("Find your next model.", "Download from Hugging Face to this PC, then send to your phone over USB.")
         account_row=QHBoxLayout()
         self.account_label = label("Hugging Face · Public downloads are ready", "badge", True); account_row.addWidget(self.account_label,1)
-        account_toggle=QCheckBox('Account settings');account_row.addWidget(account_toggle);layout.addLayout(account_row)
+        account_row.addWidget(button('Account settings ↗',self.open_settings));layout.addLayout(account_row)
         self.hub_account_panel=QWidget();account_layout=QVBoxLayout(self.hub_account_panel);account_layout.setContentsMargins(0,0,0,0)
-        account_toggle.toggled.connect(self.hub_account_panel.setVisible)
         row = QHBoxLayout()
         self.hub_token = QLineEdit(); self.hub_token.setEchoMode(QLineEdit.EchoMode.Password)
         self.hub_token.setPlaceholderText("Hugging Face read token · hf_…"); row.addWidget(self.hub_token, 1)
@@ -47,7 +47,7 @@ class HubView:
         row = QHBoxLayout()
         self.remember_account = QCheckBox("Remember in system keyring"); row.addWidget(self.remember_account)
         row.addStretch(); row.addWidget(button("Get a read token ↗", lambda: QDesktopServices.openUrl(QUrl("https://huggingface.co/settings/tokens"))))
-        account_layout.addLayout(row);layout.addWidget(self.hub_account_panel);self.hub_account_panel.hide()
+        account_layout.addLayout(row);self.hub_account_panel.hide()
         row = QHBoxLayout()
         self.hub_query = QLineEdit(); self.hub_query.setPlaceholderText("Search GGUF models, or enter owner/repository")
         self.hub_query.returnPressed.connect(self.hub_search)
@@ -93,6 +93,7 @@ class HubView:
         name = result.get("username")
         self.hub_token.clear()
         self.account_label.setText(f"Connected as {name} · " + ("Saved in system keyring" if result.get("remember") else "This session only") if name else "Hugging Face · Public downloads are ready")
+        if hasattr(self,'settings_account_label'):self.settings_account_label.setText(self.account_label.text()+('\n'+result['warning'] if result.get('warning') else ''))
         if result.get("warning"):
             self.hub_note.setText(result["warning"])
 

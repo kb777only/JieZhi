@@ -38,6 +38,13 @@ class BridgeServer(private val context: Context) : NanoHTTPD("127.0.0.1", 39471)
     private val storageLock = Any()
     @Volatile var lastProfile = JSONObject(); private set
     @Volatile var contextSize = 2048; private set
+    private val media = MediaEngine(context, { mediaBackend ->
+        check(!closing && busy.compareAndSet(false, true)) { "Phone is busy; stop the current operation first" }
+        try {
+            model?.close(); model = null; loadedId = ""; loadedName = ""; lastProfile = JSONObject()
+            compute = mediaBackend; state = "Generating media on $backendLabel"
+        } catch (e: Throwable) { busy.set(false); throw e }
+    }, { state = "Connected to desktop"; busy.set(false) })
     val backendLabel: String get() = if (compute == "npu") "Hexagon NPU" else "Phone CPU"
     private val activityLease = context.getSystemService(PowerManager::class.java)
         .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "JieZhi:usb-activity").apply { setReferenceCounted(false) }
@@ -83,6 +90,7 @@ class BridgeServer(private val context: Context) : NanoHTTPD("127.0.0.1", 39471)
         } else {
             activityLease.acquire(120_000)
             when {
+            s.uri == "/v1/media" || s.uri.startsWith("/v1/media/") -> media.route(s)
             s.uri == "/v1/telemetry" && s.method == Method.GET -> json(telemetry.snapshot(state, loadedName, compute, lastProfile))
             s.uri == "/v1/status" && s.method == Method.GET -> {
                 val models = synchronized(storageLock) { JSONArray().apply {
@@ -222,6 +230,7 @@ class BridgeServer(private val context: Context) : NanoHTTPD("127.0.0.1", 39471)
         return newChunkedResponse(Response.Status.OK, "application/x-ndjson", pipe).apply { addHeader("Cache-Control", "no-store") }
     }
     fun shutdown() {
+        media.cancel()
         closing = true; token = ""; cancel.set(true); stop()
         if (activityLease.isHeld) activityLease.release()
         thread { runBlocking { model?.stopStream() }; while (busy.get()) Thread.sleep(50); model?.close(); model = null }

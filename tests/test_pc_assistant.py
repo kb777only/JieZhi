@@ -138,3 +138,62 @@ def test_agent_stops_at_first_complete_final_action(tmp_path):
             emit({'type':'done','cancelled':True})
     answer=Assistant(ReasoningPhone(),t,8192).run('Inspect only')
     assert 'No changes needed.' in answer and '0 command(s)' in answer
+
+
+def test_create_files_and_folders_review_undo_and_scope(tmp_path):
+    approvals=[]
+    t,root=toolset(tmp_path,approve=lambda p:approvals.append(p) or True)
+    folder=root/'src';path=folder/'main.py'
+    t.execute({'tool':'create_directory','args':{'path':str(folder)}})
+    result=t.execute({'tool':'create_file','args':{'path':str(path),'content':'print("hello")\n'}})
+    assert path.read_text()=='print("hello")\n' and len(approvals)==2
+    assert '+print("hello")' in approvals[-1]['diff']
+    with pytest.raises(Denied,match='already exists'):
+        t.execute({'tool':'create_file','args':{'path':str(path),'content':'overwrite'}})
+    t.undo(result['backup_id']);assert not path.exists()
+    for destination in [tmp_path/'escape.py',root/'..'/'escape.py',root/'.env',root/'.git'/'config']:
+        with pytest.raises(Denied):t.execute({'tool':'create_file','args':{'path':str(destination),'content':'x'}})
+    (root/'link').symlink_to(tmp_path,target_is_directory=True)
+    with pytest.raises(Denied):t.execute({'tool':'create_file','args':{'path':str(root/'link'/'escape.py'),'content':'x'}})
+    assert not (tmp_path/'escape.py').exists()
+
+
+def test_create_modes_and_approval_race_preserve_existing_work(tmp_path):
+    t,root=toolset(tmp_path)
+    path=root/'new.txt';action={'tool':'create_file','args':{'path':str(path),'content':'model work'}}
+    with pytest.raises(Denied,match='denied'):t.execute(action)
+    assert not path.exists()
+    t,_=toolset(tmp_path,'inspect')
+    with pytest.raises(Denied,match='Read-only'):t.execute(action)
+    t,_=toolset(tmp_path,'workspace',lambda p:pytest.fail('Safe creation should follow scoped autonomy'))
+    assert t.execute(action)['changed']==str(path)
+    path.unlink()
+    def concurrent_create(proposal):path.write_text('user work');return True
+    t,_=toolset(tmp_path,approve=concurrent_create)
+    with pytest.raises(FileExistsError):t.execute(action)
+    assert path.read_text()=='user work'
+
+
+def test_project_agent_creates_edits_and_verifies_real_file(tmp_path):
+    approvals=[];t,root=toolset(tmp_path,approve=lambda p:approvals.append(p) or True)
+    path=root/'hello.py'
+    actions=[{'tool':'create_file','args':{'path':str(path),'content':'print("hello")\n'}},
+             {'tool':'read_file','args':{'path':str(path)}},
+             {'tool':'edit_file','args':{'path':str(path),'old':'hello','new':'world'}},
+             {'tool':'run_command','args':{'argv':['/usr/bin/python3',str(path)],'cwd':str(root)}},
+             {'answer':'Saved hello.py and verified it prints world.'}]
+    class Phone:
+        def cancel(self):pass
+        def chat(self,messages,emit,max_tokens):
+            assert 'create_file' in messages[0]['content'] and 'manual file creation instructions' in messages[0]['content']
+            emit({'type':'token','text':json.dumps(actions.pop(0))})
+    answer=Assistant(Phone(),t,8192).run('Make a hello world program.',project=True)
+    assert '2 file change(s), 1 command(s)' in answer
+    assert path.read_text()=='print("world")\n' and len(approvals)==3
+
+
+def test_edit_empty_file_requires_inspection_and_approval(tmp_path):
+    t,root=toolset(tmp_path,approve=lambda p:True)
+    path=root/'empty.txt';path.touch()
+    t.execute(edit(t,path,'','New contents'))
+    assert path.read_text()=='New contents'

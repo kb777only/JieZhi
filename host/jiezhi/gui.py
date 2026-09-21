@@ -19,8 +19,13 @@ from .hub_view import HubView
 from .attachment_view import AttachmentView
 from .attachments import prepare
 from .project_view import ProjectView
+from .project_chat import ProjectChatView
+from .desktop_actions import DesktopActionsView
 from .assistant_view import AssistantView
 from .telemetry_view import TelemetryPanel
+from .appearance import DeviceWelcome
+from .settings_view import SettingsView
+from .workflow_view import WorkflowView
 
 STYLE = """
 QWidget { background: #f3f5fa; color: #202b40; font-size: 14px; font-family: "Noto Sans", sans-serif; }
@@ -48,7 +53,7 @@ QTextBrowser, QPlainTextEdit, QLineEdit { background: #ffffff; border: 1px solid
 QTextBrowser { border: 0; padding: 20px; }
 QLineEdit { border-radius: 12px; padding: 10px; }
 QPlainTextEdit:focus, QLineEdit:focus { border-color: #89a7ff; }
-QComboBox, QSpinBox { background: #ffffff; padding: 8px; border: 1px solid #e0e6f0; border-radius: 10px; }
+QComboBox, QSpinBox, QDoubleSpinBox { background: #ffffff; padding: 8px; border: 1px solid #e0e6f0; border-radius: 10px; }
 QComboBox QAbstractItemView { background: white; selection-background-color: #dfe8ff; }
 QProgressBar { min-height: 10px; border: 0; border-radius: 5px; background: #e3e9f4; text-align: center; font-size: 10px; }
 QProgressBar::chunk { background: #386bff; border-radius: 5px; }
@@ -56,6 +61,9 @@ QStatusBar { color: #6d7b92; font-size: 12px; padding: 4px 12px; }
 QScrollBar:vertical { width: 8px; background: transparent; margin: 4px; }
 QScrollBar::handle:vertical { background: #cbd5e7; min-height: 24px; border-radius: 4px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar:horizontal { height: 8px; background: transparent; margin: 0; }
+QScrollBar::handle:horizontal { background: #cbd5e7; min-width: 24px; border-radius: 4px; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 QSplitter::handle { background: transparent; width: 12px; }
 QToolTip { color: #202b40; background: white; border: 1px solid #dfe6f1; padding: 6px; }
 """
@@ -91,40 +99,45 @@ def label(text, kind="", wrap=False):
     return widget
 
 
-class Window(HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
+class Window(DesktopActionsView, ProjectChatView, SettingsView, WorkflowView, HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
     def __init__(self):
         super().__init__()
+        self.preferences_path=DATA/'preferences.json';self.preferences=read_json(self.preferences_path,{})
+        self.dark=self.preferences.get('dark',False)
         self.client = Client(); self.workers = set(); self.busy = False
         self.initial_scan = True; self.pending_attachments = []; self.setAcceptDrops(True)
         self.current_status = {}; self.messages = []; self.conversation_id = uuid.uuid4().hex
         self.transfer_cancel = threading.Event(); self.generating = False
         self.setWindowTitle("JieZhi · 借智 — Borrow intelligence")
-        self.resize(1340, 930); self.setMinimumSize(1120, 800)
+        self.resize(1440, 1000); self.setMinimumSize(1160, 840)
         self.setStyleSheet(STYLE)
         root = QWidget(); self.setCentralWidget(root); layout = QHBoxLayout(root)
-        layout.setContentsMargins(22, 22, 22, 22); layout.setSpacing(24)
-        sidebar_panel = QWidget(); sidebar_panel.setObjectName("sidebar"); sidebar_panel.setFixedWidth(248)
+        layout.setContentsMargins(18, 18, 18, 18); layout.setSpacing(22)
+        sidebar_panel = QWidget(); sidebar_panel.setObjectName("sidebar"); sidebar_panel.setFixedWidth(216)
         sidebar = QVBoxLayout(sidebar_panel); sidebar.setContentsMargins(16, 24, 16, 20); sidebar.setSpacing(14)
         sidebar.addWidget(label("借智  JieZhi", "brand"))
         sidebar.addWidget(label("Intelligence, borrowed.", "muted"))
-        self.nav = QListWidget(); self.nav.setObjectName("navigation"); self.nav.setFixedHeight(335)
-        self.nav.addItems(["Conversation", "Phone models", "Device & setup", "Diagnostics", "Hugging Face", "Projects", "PC Assistant"])
+        self.nav = QListWidget(); self.nav.setObjectName("navigation"); self.nav.setFixedHeight(370)
+        self.nav.addItems(["Chat", "Phone models", "Welcome & device", "Diagnostics", "Discover models", "Projects", "PC Assistant", "Flow canvas"])
         sidebar.addWidget(self.nav)
         sidebar.addWidget(button("＋  New conversation", self.new_chat))
         sidebar.addWidget(label("RECENT CONVERSATIONS", "muted"))
         self.history = QListWidget(); self.history.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.history.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.history.itemClicked.connect(self.open_chat); sidebar.addWidget(self.history)
-        sidebar.addWidget(button("Delete selected conversation", self.delete_chat))
+        sidebar.addWidget(button("Delete conversation", self.delete_chat))
         self.connection = label("○  No phone connected", "muted", True); sidebar.addWidget(self.connection)
         sidebar.addWidget(label("USB connection · Local inference", "muted"))
         layout.addWidget(sidebar_panel)
         content = QVBoxLayout(); content.setSpacing(12); layout.addLayout(content, 1)
+        header=QHBoxLayout();header.addWidget(label('JIEZHI  /  YOUR LOCAL WORKSPACE','muted'));header.addStretch()
+        self.theme_button=button('☾',self.toggle_dark);self.theme_button.setObjectName('corner');self.theme_button.setAccessibleName('Toggle dark mode');header.addWidget(self.theme_button)
+        self.settings_button=button('⚙',self.open_settings);self.settings_button.setObjectName('corner');self.settings_button.setToolTip('Settings');self.settings_button.setAccessibleName('Open settings');header.addWidget(self.settings_button);content.addLayout(header)
         self.pages = QStackedWidget(); content.addWidget(self.pages, 1)
         self.telemetry_panel = TelemetryPanel(self.client, self); content.addWidget(self.telemetry_panel)
-        self.build_chat(); self.build_models(); self.build_setup(); self.build_diagnostics(); self.build_hub(); self.build_projects(); self.build_assistant()
+        self.build_chat(); self.build_models(); self.build_setup(); self.build_diagnostics(); self.build_hub(); self.build_projects(); self.build_assistant(); self.build_workflows(); self.build_settings(); self.init_desktop_popup()
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex); self.nav.setCurrentRow(2)
-        self.refresh_history(); self.render_chat()
+        self.refresh_history(); self.render_chat(); self.apply_appearance()
         self.statusBar().showMessage("Connect your Snapdragon 8 Elite phone to get started.")
         self.heartbeat = QTimer(self); self.heartbeat.setInterval(20_000)
         self.heartbeat.timeout.connect(self.keep_alive); self.heartbeat.start()
@@ -154,8 +167,9 @@ class Window(HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
         return layout
 
     def build_chat(self):
-        layout = self.page("A little help from your phone.", "Your model runs on the connected Android device. Conversations are saved on this PC.")
+        layout = self.page("What’s on your mind?", "A private conversation, with room to think.")
         self.project_badge = label("Personal conversation · No project", "muted"); layout.addWidget(self.project_badge)
+        self.build_project_chat_controls(layout)
         self.model_badge = label("No model loaded · Open Phone models to choose one", "badge", True); layout.addWidget(self.model_badge)
         self.transcript = QTextBrowser(); self.transcript.setOpenExternalLinks(False); self.transcript.setAcceptDrops(False); layout.addWidget(self.transcript, 1)
         self.attachment_label = label("Spreadsheets, PDF, text & code · Drop files here", "muted", True); layout.addWidget(self.attachment_label)
@@ -163,7 +177,7 @@ class Window(HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
         self.preview_files = button("Preview", self.preview_attachments); files_row.addWidget(self.preview_files)
         self.clear_files = button("Remove attachments", self.clear_attachments); files_row.addWidget(self.clear_files); files_row.addStretch(); layout.addLayout(files_row)
         self.update_attachments()
-        self.composer = QPlainTextEdit(); self.composer.setAcceptDrops(False); self.composer.setPlaceholderText("Ask a question, or attach a document to explore…"); self.composer.setMaximumHeight(110); layout.addWidget(self.composer)
+        self.composer = QPlainTextEdit(); self.composer.setAcceptDrops(False); self.composer.setPlaceholderText("Ask a question, or attach a document to explore…"); self.composer.setMinimumHeight(95); self.composer.setMaximumHeight(125); layout.addWidget(self.composer)
         row = QHBoxLayout(); self.metrics = label("", "muted"); row.addWidget(self.metrics, 1)
         self.stop_button = button("Stop", self.stop); self.stop_button.setEnabled(False); row.addWidget(self.stop_button)
         self.send_button = button("Send message", self.send, True); row.addWidget(self.send_button); layout.addLayout(row)
@@ -189,7 +203,10 @@ class Window(HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
         self.transfer_label = label("Select a local model to begin.", "muted"); layout.addWidget(self.transfer_label)
 
     def build_setup(self):
-        layout = self.page("Connect your phone", "V1 supports Snapdragon 8 Elite (SM8750). Start with the Xiaomi 15 Ultra.")
+        layout = self.page("Welcome to JieZhi", "A phone-powered workspace, built around you.")
+        self.welcome_art=DeviceWelcome();layout.addWidget(self.welcome_art)
+        cached=read_json(DATA/'recommendation-phone.json',{})
+        if cached.get('phone'):self.welcome_art.device(cached['phone'],cached.get('soc',''))
         for title, desc in [
             ("01  Enable USB debugging", "On Android, enable Developer options → USB debugging. Connect a data-capable cable and approve this PC on the phone."),
             ("02  Install the Android client", "Select the USB device below and install JieZhi. Xiaomi may ask you to allow installation over USB."),
@@ -249,7 +266,7 @@ class Window(HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
                 self.initial_scan = False
                 pairs = read_json(DATA / "pairing.json", {})
                 ready = [d for d in found if d["state"] == "device" and d["serial"] in pairs]
-                if len(ready) == 1:
+                if len(ready) == 1 and self.preferences.get('auto_connect',True):
                     self.device_picker.setCurrentIndex(self.device_picker.findData(ready[0]["serial"]))
                     QTimer.singleShot(100, self.connect_phone)
         self.run_job(lambda _: devices(), done, "Looking for USB phones…")
@@ -294,6 +311,10 @@ class Window(HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
 
     def update_status(self, status):
         self.current_status = status
+        if status.get('loaded_id') and self.preferences.get('last_text_model')!=status['loaded_id']:
+            self.preferences['last_text_model']=status['loaded_id'];save_json(self.preferences_path,self.preferences)
+        if hasattr(self,"desktop_model_choices"):self.fill_desktop_models()
+        self.welcome_art.device(status.get('phone',''),status.get('soc',''))
         if self.client.port and self.hub_phone.get('serial')!=self.client.serial:
             self.hub_phone={};self.hub_render()
             if self.nav.currentRow()==4:self.hub_search_timer.start()
@@ -365,16 +386,17 @@ class Window(HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
 
     def render_chat(self):
         if not self.messages:
-            self.transcript.setHtml('<div style="padding:40px;color:#6d7b92"><h2 style="color:#17253e">Your phone powers the conversation.</h2><p>Connect in Device & setup, then import and load a model.</p><p>Bring a document. Explore an idea. Keep the intelligence close.</p><p style="color:#f08a43">● &nbsp; Powered by your phone. Connected by USB.</p></div>')
-            return
+            ink='#dce6ff' if self.dark else '#273c66'
+            self.transcript.setHtml(f'<div style="margin:48px 28px;color:{ink}"><h1>A fresh conversation.</h1><p>Explore an idea, bring a document, or pick up a project.</p><p style="color:#8393b0">Your files stay here. Your phone does the thinking.</p></div>');return
         parts = []
         for message in self.messages:
             who = "YOU" if message["role"] == "user" else "JIEZHI"
-            color = "#6d7b92" if who == "YOU" else "#386bff"
+            color = ("#a8b5cd" if self.dark else "#6d7b92") if who == "YOU" else ("#90b1ff" if self.dark else "#386bff")
             content = html.escape(message["content"]).replace("\n", "<br>")
             files = " · ".join(html.escape(f["name"]) for f in message.get("attachments", []))
             attachment_line = f'<p style="color:#d17832">Attached: {files}</p>' if files else ""
-            parts.append(f'<p style="color:{color};margin-top:22px"><b>{who}</b></p>{attachment_line}<p>{content}</p>')
+            action_line="".join("<p style=\"color:#8393b0\">"+html.escape(a)+"</p>" for a in message.get("actions",[]))
+            parts.append(f'<p style="color:{color};margin-top:22px"><b>{who}</b></p>{attachment_line}<p>{content}</p>{action_line}')
         self.transcript.setHtml("".join(parts)); self.transcript.moveCursor(QTextCursor.MoveOperation.End)
 
     def send(self):
@@ -384,10 +406,7 @@ class Window(HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
         if not self.current_status.get("loaded_id"):
             self.failed("Load a model in Models before sending a message."); return
         if self.active_project:
-            project = dict(self.active_project)
-            def ready(references):
-                QTimer.singleShot(100, lambda: self.send_with_references(text, references, project.get("instructions", "")))
-            self.run_job(lambda _: self.project_store.references(project, text), ready, "Finding relevant project references…")
+            self.start_project_chat(text)
         else:
             self.send_with_references(text, [])
 
@@ -431,6 +450,7 @@ class Window(HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
         if self.busy:
             return
         self.messages = []; self.pending_attachments = []; self.update_attachments(); self.conversation_id = uuid.uuid4().hex
+        self.refresh_project_chat_controls()
         self.metrics.clear(); self.composer.clear(); self.render_chat(); self.nav.setCurrentRow(0)
 
     def save_chat(self):
@@ -485,8 +505,11 @@ class Window(HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
         self.run_job(work, lambda _: self.device_details.setText("USB rule installed. Reconnect the cable and find phones again."), "Waiting for Deepin administrator authentication…")
 
     def closeEvent(self, event):
+        self.save_flow_draft()
         if self.workers:
             self.statusBar().showMessage("Stop the current operation before closing JieZhi."); event.ignore(); return
         if not self.telemetry_panel.shutdown():
             event.ignore(); QTimer.singleShot(250, self.close); return
+        self.desktop_popup.close()
+        for popup in self.quick_results:popup.close()
         self.client.disconnect(); event.accept()

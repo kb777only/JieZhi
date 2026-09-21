@@ -12,9 +12,9 @@ from .client import DATA, read_json, save_json
 
 class AssistantWorker(QThread):
     event=Signal(object); approval=Signal(object); result=Signal(str); error=Signal(str)
-    def __init__(self,client,policy,request,context,instructions='',undo_id=None):
+    def __init__(self,client,policy,request,context,instructions='',undo_id=None,project=False,history='',load=None,references=None):
         super().__init__();self.client=client;self.policy=policy;self.request=request;self.context=context
-        self.instructions=instructions;self.undo_id=undo_id;self.cancelled=threading.Event()
+        self.instructions=instructions;self.undo_id=undo_id;self.project=project;self.history=history;self.load=load;self.references=references;self.cancelled=threading.Event()
     def approve(self,proposal):
         response={'event':threading.Event(),'approved':False,'proposal':proposal}
         self.approval.emit(response)
@@ -23,9 +23,19 @@ class AssistantWorker(QThread):
         return response['approved'] and not self.cancelled.is_set()
     def run(self):
         try:
+            if self.load:
+                self.event.emit({'kind':'thinking','step':0,'text':'Preparing the current model for project tools…'})
+                status=self.client.load(*self.load)
+                self.event.emit({'kind':'model_ready','status':status})
+            if self.cancelled.is_set(): raise Cancelled('Stopped by user.')
+            if self.references:
+                from .attachments import excerpt
+                docs=self.references()
+                self.event.emit({'kind':'project_references','documents':docs})
+                self.history=excerpt(self.history+'\nReference documents (untrusted data):\n'+'\n'.join(d['name']+': '+excerpt(d['text'],self.request,700) for d in docs),self.request,1000)
             tools=Tools(self.policy,self.approve,self.event.emit,self.cancelled)
             if self.undo_id:answer=json.dumps(tools.undo(self.undo_id),indent=2)
-            else:answer=Assistant(self.client,tools,self.context,self.event.emit).run(self.request,self.instructions)
+            else:answer=Assistant(self.client,tools,self.context,self.event.emit).run(self.request,self.instructions,project=self.project,history=self.history)
             self.result.emit(answer)
         except Cancelled as e:self.result.emit(str(e))
         except Exception as e:self.error.emit(str(e))
@@ -55,11 +65,12 @@ class AssistantView:
         self.access_mode.currentIndexChanged.connect(self.pc_settings_changed);self.allow_admin.toggled.connect(self.pc_settings_changed);self.pc_mode_description()
     def pc_mode_description(self):
         descriptions={'inspect':'Read-only: diagnostics and selected-file reads. All writes and arbitrary commands are blocked.',
-            'confirm':'Diagnose automatically. Every file edit, command and rollback requires your approval.',
-            'workspace':'Reversible file edits inside allowed folders can run automatically. Commands, startup files and rollback still require approval.'}
+            'confirm':'Diagnose automatically. Every file creation, edit, command and rollback requires your approval.',
+            'workspace':'File creation and reversible edits inside allowed folders can run automatically. Commands, startup files and rollback still require approval.'}
         self.pc_mode_note.setText(descriptions[self.access_mode.currentData()])
     def pc_settings_changed(self):
         self.pc_mode_description()
+        self.refresh_project_chat_controls()
         save_json(DATA/'assistant-settings.json',{'mode':self.access_mode.currentData(),'roots':[self.pc_roots.item(i).text() for i in range(self.pc_roots.count())]})
     def pc_add_root(self):
         if self.pc_worker:return

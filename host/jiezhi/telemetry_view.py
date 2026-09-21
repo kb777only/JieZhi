@@ -68,6 +68,12 @@ class TelemetryPanel(QWidget):
             card=MetricCard(title,color,unit,ceiling);self.cards[key]=card;row.addWidget(card,1)
         outer.addLayout(row)
         self.timer=QTimer(self);self.timer.setInterval(1000);self.timer.timeout.connect(self.poll);self.timer.start()
+    def set_theme(self,dark):
+        self.setStyleSheet('QWidget#telemetryPanel {background:'+('#191f32' if dark else '#eaf0fc')+';border-radius:14px;} QWidget#telemetryCard {background:'+('#222c43' if dark else 'white')+';border-radius:10px;}')
+        for card in self.cards.values():
+            card.title.setStyleSheet('font-size:10px;color:'+('#b2bfd5' if dark else '#6d7b92')+';background:transparent;')
+            card.note.setStyleSheet('font-size:10px;color:'+('#a4b4cf' if dark else '#8591a7')+';background:transparent;')
+    
     def poll(self):
         if self.closed:return
         target=(self.client.serial,self.client.port,self.client.token)

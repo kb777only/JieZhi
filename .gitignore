@@ -21,3 +21,9 @@ core
 .vscode/
 .coverage
 htmlcov/
+
+# Built by scripts/build-media.sh
+android/app/src/main/jniLibs/
+android/app/src/main/assets/media-licenses/
+android/app/src/main/assets/qnnlibs/
+android/app/src/main/assets/npu/

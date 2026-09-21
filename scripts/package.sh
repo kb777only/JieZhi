@@ -8,6 +8,7 @@ cp scripts/setup-usb.sh assets/setup-usb.sh
 mkdir -p assets/platform-tools assets/licenses
 cp --remove-destination -R .tools/platform-tools/. assets/platform-tools/
 cp THIRD_PARTY.md assets/licenses/
+cp -R android/app/src/main/assets/media-licenses assets/licenses/
 .venv/bin/python - <<'PY'
 from importlib.metadata import distributions
 from pathlib import Path

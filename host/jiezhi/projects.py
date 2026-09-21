@@ -11,7 +11,9 @@ SUPPORTED = TEXT_EXTENSIONS | {'.pdf','.xlsx','.xlsm','.xls','.ods'}
 
 
 class Projects:
-    def __init__(self, data=None): self.data=data or DATA/'projects'
+    def __init__(self, data=None, workspace_base=None):
+        self.data=data or DATA/'projects'
+        self.workspace_base=workspace_base or Path.home()/'Documents'/'JieZhi Projects'
     def all(self):
         return sorted((read_json(p,{}) for p in self.data.glob('*.json')), key=lambda p:p.get('name','').lower())
     def save(self, project):
@@ -22,6 +24,14 @@ class Projects:
         if not name or len(name)>80: raise ValueError('Use a project name of 1–80 characters.')
         project={'id':uuid.uuid4().hex,'name':name,'instructions':'','folders':[],'documents':[]}
         self.save(project); return project
+    def ensure_workspace(self,project):
+        if not project.get('folders'):
+            name=re.sub(r'[^\w .-]','_',project['name']).strip(' .') or 'Project'
+            folder=self.workspace_base/(name+'-'+project['id'][:8])
+            folder.mkdir(parents=True,exist_ok=True)
+            if folder.is_symlink() or sensitive(folder): raise ValueError('Choose a regular project folder.')
+            project['folders']=[str(folder.resolve())];self.save(project)
+        return project
     def remove(self,project):
         # Metadata only; linked folders and chats are never deleted here.
         (self.data/f"{project['id']}.json").unlink(missing_ok=True)

@@ -7,10 +7,11 @@ connected by USB. The desktop owns the interface and conversation history. The
 Android app owns model storage and inference. No desktop inference or cloud chat
 provider is used.
 
-This repository contains the complete `v0.5.0-alpha.1` source release: the native
+This repository contains the `v0.6.0-alpha.1` source: the native
 Linux host, Android inference client, authenticated USB protocol, model discovery
 and fit recommendations, local document/project context, guarded PC tools, live
-phone telemetry, tests, build scripts, and packaging flow.
+phone telemetry, a saved node canvas, phone-local image/video diffusion, tests,
+build scripts, and packaging flow.
 
 ![JieZhi sends a local AI model's thoughts from a phone to a desktop through USB](assets/generated/jiezhi-logo-usb-thoughts-v4.png)
 
@@ -20,22 +21,62 @@ phone telemetry, tests, build scripts, and packaging flow.
 ## Install and use
 
 1. Download the release assets from GitHub. Verify them with `SHA256SUMS`, then
-   open `JieZhi-0.5.0-alpha.1-Installer.run`, or extract the Linux archive
+   open the versioned `JieZhi-…-Installer.run`, or extract the Linux archive
    and run `Install-JieZhi.sh`. The GUI installs into `~/.local/opt/jiezhi` and adds
    JieZhi to the application menu. ADB and the Android APK are included.
 2. Enable USB debugging on the phone, connect a data cable, and accept Android's
-   computer authorization prompt. In **Device & setup**, select the phone.
+   computer authorization prompt. In **Welcome & device**, select the phone.
 3. Click **Install Android client**. Approve any Xiaomi USB installation prompt.
 4. Click **Connect & pair**, then enter the code shown in JieZhi on the phone.
 5. On Xiaomi, set JieZhi's app battery saver to **No restrictions**. HyperOS was
    observed freezing the app in the background even with a foreground service.
 6. In **Phone models**, import a local `.gguf`, select **Hexagon NPU**, and load it.
-7. Open **Conversation** and send a message. Use **Diagnostics** to inspect native runtime
+7. Open **Chat** and send a message. Use **Diagnostics** to inspect native runtime
    logs. CPU mode is an explicit diagnostic option and is labelled as such.
+
+## Appearance, settings and creative workflows
+
+The upper-right gear opens Settings: Hugging Face account, theme, gradient motion,
+telemetry visibility/polling, reconnect behavior and context defaults. The adjacent
+moon/sun switches theme immediately. Chat and Projects retain files, spreadsheets,
+history, folders and guarded PC Assistant actions. Inside a project, chat can
+create folders/files and edit/save files directly on the PC. The default mode
+asks before each change; saved paths and action decisions appear in chat. An
+unlinked project gets its own folder under `~/Documents/JieZhi Projects`.
+
+**Flow canvas** connects Prompt, Language model, Image generation, Video generation
+and Output nodes. Drag output dots to input dots; select nodes to edit parameters.
+Ctrl+wheel zooms, middle-drag pans, and Save/Open share JSON workflows. Edits are
+saved locally. Only **Run flow** starts inference. Text nodes can use different
+phone models in sequence. Media outputs are downloaded over authenticated USB,
+verified and saved locally with the flow results. Stop preserves finished outputs.
+
+**Get starter media models…** downloads pinned, checksum-verified models and all
+required components, transfers them over USB and configures the node. **Absolute
+Reality uses Hexagon NPU** through QNN (512×512); **Neodragon uses the NPU** for
+49-frame video at 1024×640, with text or an image as input. The CPU alternatives
+are SD 1.5 images and Wan 2.1 1.3B video. Custom compatible GGUF/safetensors weights
+and converted SD 1.5 QNN ZIP packages can be imported. NPU models need their
+converted QNN representation; an arbitrary GGUF cannot run on that media path.
+See [workflow details and limits](docs/workflows.md).
+
+The NPU media component adapts LocalDream / Nightmare Mobile under **CC BY-NC 4.0**,
+with terms separate from JieZhi's own code. Its non-commercial restriction and Qualcomm/model
+terms apply to the combined prototype; see [third-party notices](THIRD_PARTY.md).
+
+## Actions beside your cursor
+
+Select text or right-click an image, then hover over the JieZhi icon for 350 ms.
+Summarize, rewrite, continue, explain, translate or generate an image; rework,
+expand, vary or upscale selected images on the phone NPU. When an app does not
+expose its image, drag to select its area. Results open next to the cursor with
+Copy/Save controls and loading/generating toasts. The host can remain minimized.
+Set each action's model, translation language and popup toggle in Settings.
+This integration currently targets X11. See [desktop actions](docs/desktop-actions.md).
 
 ## The hook: a phone-aware local model library
 
-JieZhi does more than move inference to the phone. **Hugging Face** detects the
+JieZhi does more than move inference to the phone. **Discover models** detects the
 connected phone's SoC, RAM, and free storage, then ranks models and exact GGUF
 files for chat, coding, reasoning, document work, or speed. Every suitability
 score exposes its assumptions: estimated working RAM, context size, quantization,
@@ -145,12 +186,15 @@ native logs. Tokenization, sampling, and some operations may use the phone CPU.
 
 Desktop: Python 3.12+, PySide6, requests, pypdf, keyring. Android: JDK 17, Gradle 8.13,
 Android SDK 36 / build tools 35.0.0. Native inference is supplied by the pinned
-GenieX 0.7.0 Android AAR, so building this app does not require an NDK.
+GenieX 0.7.0 Android AAR for text. Media requires Android NDK 27.2.12479018 and
+CMake 3.22.1; install those SDK packages before building. The NPU runtime is staged
+from a pinned, checksum-verified upstream APK by `scripts/prepare-qnn.py`.
 
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 # Set JAVA_HOME and ANDROID_HOME, or place the toolchains in .tools as below.
+# First Android build calls build-media.sh when its native binary is absent.
 sh scripts/build-android.sh
 .venv/bin/python host/main.py
 QT_QPA_PLATFORM=offscreen PYTHONPATH=host .venv/bin/pytest -q tests

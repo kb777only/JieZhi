@@ -36,6 +36,10 @@ jobs:
           java-version: "17"
           cache: gradle
       - name: Install Android SDK
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0"
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Build phone media runtime
+        run: sh scripts/build-media.sh
+      - name: Stage pinned NPU runtime
+        run: python3 scripts/prepare-qnn.py
       - name: Build Android debug client
         run: ./android/gradlew -p android assembleDebug --console plain

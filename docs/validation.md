@@ -245,3 +245,87 @@ Existing real model downloads/transfers are documented above; this update did no
 redownload model weights. The GUI installer updated the per-user installation and
 the packaged installer passed its standalone launch smoke test. The workspace's
 current unified package version is `0.5.0-alpha.1`.
+
+## v0.6 interface, phone media and project actions
+
+The host now includes corner settings/theme controls, a phone illustration on
+the welcome page, optional telemetry, light/dark themes and a draggable workflow
+canvas with parameter editing and chained text/image/video nodes. Qt screenshots
+were rendered and inspected in `artifacts/v06`.
+
+On this Xiaomi, Absolute Reality's QNN package generated a real 512×512 image
+through the phone's Hexagon backend in 7.36 seconds including load and USB result
+retrieval (20 requested steps). The isolated NPU numerical canary reported
+54.8 dB FP16 accuracy. Native logs report QNN backend initialization and UNet
+execution. See `artifacts/v06/npu-image-result.json` and its PNG result.
+The Android-only integration test harness uses its own ephemeral authenticated
+loopback port; it does not bypass or alter production pairing.
+
+CPU fallback also produced a 384×384 SD1.5 image in 341 seconds (16 steps) and a
+128×128, five-frame Wan2.1 video in 311 seconds (four steps). These intentionally
+small CPU smoke tests do not establish interactive high-quality video performance.
+
+Project chat now uses host-side file actions. 56 automated tests pass, including
+a deterministic simulated phone creating, reading, editing and verifying a real
+fixture file; real Qt approval dialogs gating creation and a follow-up edit;
+automatic context preparation of the same model; history persistence; no-overwrite
+races, denied writes, scoped autonomy, rollback and folder/traversal/symlink guards.
+These file-action tests use simulated model replies and do not establish tool
+reliability for every small instruction model. No 9B model was used for v0.6.
+
+The physical Xiaomi's Qwen2.5-Coder-1.5B-Instruct-abliterated Q4_0 model also
+created a real `hello.py` in a disposable PC project directory through the
+approved host tool. Early trials repeated completed work or attempted an
+unrequested edit, which host guards stopped. With explicit saved-file state
+and project completion instructions, the final trial created the file, listed
+the directory and returned a completion answer in three steps. The generated
+program was not executed. `artifacts/v06/project-hardware-result.json` records
+this test. This demonstrates real file creation, not general coding reliability.
+
+A second physical 1.5B trial read the generated file, proposed an exact string
+replacement, saved the approved edit, and returned its completion answer in
+three steps. The resulting PC file contains `print('Project editing works')`.
+See `artifacts/v06/project-edit-hardware-result.json`.
+
+
+## v0.6 desktop selection actions and final media validation
+
+The final host suite passes 59 tests. Added Qt coverage verifies the 350 ms hover
+threshold, configured-model switching and reuse, streamed cursor results, preserved
+model preferences, image area fallback and disabling the global watcher.
+
+On the physical Deepin X11 desktop, an external Qt application's actual mouse text
+selection triggered JieZhi while its host window was minimized. Hover opened the
+menu; Summarize loaded the configured Qwen2.5-Coder-1.5B model and displayed its
+real phone-generated response beside the cursor. See `desktop-text-action.json`,
+`desktop-hover-menu.png` and `desktop-result.png` in `artifacts/v06`.
+
+An external image application's native right-click menu was dismissed upon hover;
+JieZhi offered the fallback area selector and delivered the selected 512×512 image
+to the requested action. A subsequent full run completed NPU upscaling through
+the same area selector and displayed the image in its cursor popup; see
+`artifacts/v06/desktop-upscale-result.png`. The tested Deepin installation lacks the accessibility
+bus, so automatic accessibility-based image bounds are not claimed as live-tested.
+
+Production authenticated phone routes imported a PNG and completed NPU img2img
+rework (8.17 seconds), QuickSRNet 2× upscaling to 1024×1024 (4.14 seconds), and
+expansion to 512×512 (8.15 seconds), including native loading and USB result
+retrieval. Early expansion trials left white padding; a context-filled starting
+canvas with the correct outside mask fixed that failure. The final expanded image
+preserves the center and fills the surround, with visible model-generated artifacts.
+See `artifacts/v06/desktop-image-actions.json` and its referenced PNGs.
+
+Neodragon generated a real 49-frame, 1024×640 H.264 video on the phone NPU in
+24.15 seconds including loading and USB retrieval. `ffprobe` verified 24 fps and
+2.041667 seconds. See `artifacts/v06/npu-video-result.json`. Initial bundle assembly
+could not create hard links in Android private storage; bounded atomic copies fixed
+this. The completed result passed hash verification before a test-harness teardown
+connection closed early. No 9B model was used for these checks.
+
+The final 0.6 bundle and GUI installer were rebuilt and installed into the per-user
+application directory. The packaged installer and installed host launched on Deepin.
+The 1.5B Coder model was restored with NPU requested and an 8192-token context;
+the separate integration-test APK was removed. A later final connection check
+found the Android bridge service stopped after phone touch input, with its model
+released. Restarting the phone service and pairing again is therefore needed for
+the next session; no crash was observed in that final check.

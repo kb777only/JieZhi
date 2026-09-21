@@ -2,6 +2,25 @@
 
 All notable changes to JieZhi are documented here.
 
+## 0.6.0-alpha.1 — 2026-09-20
+
+- Add X11 selection/right-click popups with 350 ms hover, per-action model settings,
+  loading/generating toasts, cursor-adjacent results and image area-selection fallback.
+- Add phone NPU image rework, expansion, variations and tiled QuickSRNet 2× upscaling.
+
+- Project chats can create folders/files and edit/save PC files through scoped, reviewed tools, with access controls and saved paths in chat.
+
+- Add corner Settings and quick dark-mode controls, remembered preferences,
+  animated device welcome artwork and a wider Projects layout.
+- Consolidate Hugging Face account, telemetry, motion and generation defaults.
+- Add editable, saved node workflows with typed connections, sequential model
+  switching, cancellation, output previews and per-node parameters.
+- Add Android NPU image/video pipelines (Absolute Reality / Neodragon) and CPU
+  alternatives (SD 1.5 / Wan), with verified starter downloads, resumable transfer
+  and private outputs. No cloud inference is used. NPU media has separately
+  attributed non-commercial upstream components.
+- Preserve text NPU inference and existing chat, projects, attachments and PC safeguards.
+
 ## 0.5.0-alpha.1 — 2026-09-20
 
 - Make phone-aware model discovery the primary Hugging Face experience.

@@ -7,6 +7,12 @@ if os.environ.get("QT_QPA_PLATFORM", "").split(";")[0] == "dxcb":
 elif os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
+if '--probe-image' in sys.argv:
+    import json
+    from jiezhi.desktop_surface import accessible_image_rect
+    print(json.dumps(accessible_image_rect(int(sys.argv[-2]),int(sys.argv[-1]))))
+    sys.exit(0)
+
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 

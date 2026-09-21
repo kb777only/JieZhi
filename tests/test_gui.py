@@ -69,3 +69,41 @@ def test_project_chat_history_is_separate(qtbot,tmp_path,monkeypatch):
     assert w.history.count()==1 and w.history.item(0).text()=='Project chat'
     w.leave_project();assert w.history.count()==1 and w.history.item(0).text()=='Personal chat'
     qtbot.waitUntil(lambda:not w.workers);w.close()
+
+
+def test_project_chat_creates_and_edits_after_real_approval(qtbot,tmp_path,monkeypatch):
+    import json
+    import jiezhi.assistant_view as av
+    import jiezhi.pc_tools as pc
+    from jiezhi.projects import Projects
+    monkeypatch.setattr(gui,'DATA',tmp_path/'data');monkeypatch.setattr(av,'DATA',tmp_path/'data');monkeypatch.setattr(pc,'DATA',tmp_path/'data')
+    monkeypatch.setattr(Window,'start_scan',lambda s:None);monkeypatch.setattr(hub.Hub,'restore',lambda s:{})
+    w=Window();qtbot.addWidget(w);w.show();qtbot.wait(250)
+    w.project_store=Projects(tmp_path/'projects',tmp_path/'workspaces')
+    w.active_project=w.project_store.create('Snake Game');w.new_chat()
+    w.current_status={'loaded_id':'fixture','context_size':2048,'requested_backend':'npu'}
+    loads=[]
+    def load(*args):
+        loads.append(args);return {'loaded_id':'fixture','context_size':8192}
+    w.client.load=load;monkeypatch.setattr(w,'update_status',lambda status:setattr(w,'current_status',status))
+    path=tmp_path/'workspaces'/('Snake Game-'+w.active_project['id'][:8])/'snake.py'
+    actions=[{'tool':'create_file','args':{'path':str(path),'content':'print("snake")\n'}},
+             {'answer':'Created snake.py.'}]
+    def chat(messages,emit,max_tokens):emit({'type':'token','text':json.dumps(actions.pop(0))})
+    w.client.chat=chat;w.client.cancel=lambda:None
+    w.composer.setPlainText('Create a snake program in this project.');w.send()
+    qtbot.waitUntil(lambda:w.approval_dialog is not None,timeout=5000)
+    assert not path.exists() and not w.project_access.isEnabled()
+    w.approval_dialog.accept()
+    qtbot.waitUntil(lambda:not w.busy,timeout=5000)
+    assert path.read_text()=='print("snake")\n' and loads==[('fixture','npu',8192)]
+    assert 'Saved · '+str(path) in w.transcript.toPlainText()
+    actions.extend([{'tool':'read_file','args':{'path':str(path)}},
+        {'tool':'edit_file','args':{'path':str(path),'old':'snake','new':'Snake Game'}}, {'answer':'Updated snake.py.'}])
+    w.composer.setPlainText('Change the title to Snake Game.');w.send()
+    qtbot.waitUntil(lambda:w.approval_dialog is not None,timeout=5000)
+    assert path.read_text()=='print("snake")\n'
+    w.approval_dialog.accept();qtbot.waitUntil(lambda:not w.busy,timeout=5000)
+    assert path.read_text()=='print("Snake Game")\n' and len(loads)==1
+    w.open_chat(w.history.item(0));assert 'Saved · '+str(path) in w.transcript.toPlainText()
+    w.close()

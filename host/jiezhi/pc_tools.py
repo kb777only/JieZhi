@@ -177,13 +177,27 @@ class Tools:
     def proposal(self, action):
         tool=action['tool']; args=action.get('args',{})
         if self.policy.mode=='inspect': raise Denied('Read-only mode blocks all changes and command execution.')
+        if tool in {'create_file','create_directory'}:
+            directory,name,path=self.parent_fd(args['path'],True)
+            try:
+                try: os.stat(name,dir_fd=directory,follow_symlinks=False)
+                except FileNotFoundError: pass
+                else: raise Denied('The destination already exists. Read it and use edit_file instead.')
+            finally: os.close(directory)
+            content=args.get('content','')
+            if not isinstance(content,str) or len(content.encode())>65536 or '\x00' in content:
+                raise Denied('New files must be UTF-8 text, at most 64 KiB, without NUL characters.')
+            return {'tool':tool,'path':str(path),'reason':action.get('reason',''),
+                    'risk':'Creates a new directory.' if tool=='create_directory' else 'Creates a new file. Existing files are never overwritten; creation can be undone.',
+                    'diff':''.join(difflib.unified_diff([],content.splitlines(True),fromfile='/dev/null',tofile=str(path))),
+                    '_after':content.encode(),'after_sha256':digest(content.encode()),'_mode':0o644}
         if tool=='edit_file':
             path,_,_=self.path(args['path'],True)
             before,info=self.read(str(path),True)
             if info.st_uid != os.getuid(): raise Denied('Only files owned by your user can be edited directly.')
             if digest(before)!=args['sha256']: raise Denied('File changed since inspection. Read it again before proposing an edit.')
             old,new=args['old'],args['new']; text=before.decode()
-            if not old or text.count(old)!=1: raise Denied('The exact text to replace must occur once.')
+            if (not old and text) or text.count(old)!=1: raise Denied('The exact text to replace must occur once (empty old is only valid for an empty file).')
             after=text.replace(old,new,1).encode()
             if len(after)>65536: raise Denied('Edited file exceeds the size limit.')
             difference=''.join(difflib.unified_diff(text.splitlines(True),after.decode().splitlines(True),fromfile=str(path),tofile=str(path)))
@@ -204,13 +218,18 @@ class Tools:
                     'risk':('Runs with administrator access. Stopping an elevated process may require administrator intervention. ' if admin else 'Runs with your user account permissions. ')+'Commands are not sandboxed to selected folders. They may read/change other files, use the network or launch programs. Command side effects have no automatic rollback.'}
         raise Denied('Unknown action.')
 
-    def atomic_replace(self,path,data,mode):
+    def atomic_replace(self,path,data,mode,create=False):
         directory,name,_=self.parent_fd(path,True); temp='.jiezhi-'+uuid.uuid4().hex
         try:
             fd=os.open(temp,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,mode & 0o777,dir_fd=directory)
             with os.fdopen(fd,'wb') as stream:
                 stream.write(data); stream.flush(); os.fchmod(stream.fileno(),mode & 0o777); os.fsync(stream.fileno())
-            os.replace(temp,name,src_dir_fd=directory,dst_dir_fd=directory); os.fsync(directory)
+            if create:
+                # Publish atomically without replacing a destination created during approval.
+                os.link(temp,name,src_dir_fd=directory,dst_dir_fd=directory,follow_symlinks=False)
+                os.unlink(temp,dir_fd=directory)
+            else: os.replace(temp,name,src_dir_fd=directory,dst_dir_fd=directory)
+            os.fsync(directory)
         finally:
             try: os.unlink(temp,dir_fd=directory)
             except FileNotFoundError: pass
@@ -244,21 +263,27 @@ class Tools:
             package=args['name']
             if not re.fullmatch(r'[a-z0-9][a-z0-9+.-]{0,100}',package): raise Denied('Use an exact Debian package name.')
             result=self.process(['/usr/bin/dpkg-query','-W','-f=${Package} ${Version} ${Status}\n',package])
-        elif tool in {'edit_file','run_command'}:
+        elif tool in {'create_file','create_directory','edit_file','run_command'}:
             proposal=self.proposal(action); public={k:v for k,v in proposal.items() if not k.startswith('_')}
             self.record('proposed',proposal=redact(json.dumps(public,ensure_ascii=False)))
-            auto=tool=='edit_file' and self.policy.mode=='workspace' and not Path(proposal['path']).suffix.lower() in {'.desktop','.service','.timer'} and not Path(proposal['path']).name in {'.bashrc','.profile','.bash_profile','.zshrc'}
+            auto=tool in {'edit_file','create_file','create_directory'} and self.policy.mode=='workspace' and not Path(proposal['path']).suffix.lower() in {'.desktop','.service','.timer'} and not Path(proposal['path']).name in {'.bashrc','.profile','.bash_profile','.zshrc'}
             if not auto and not self.approve(public):
                 self.record('denied',tool=tool); raise Denied('User denied this action. Do not retry it or use another tool to bypass the decision.')
             self.check_cancel(); self.record('approved',tool=tool,automatic=auto)
-            if tool=='edit_file':
-                current,_=self.read(proposal['path'],True)
-                if digest(current)!=proposal['sha256']: raise Denied('File changed while awaiting approval. Nothing was written.')
+            if tool in {'edit_file','create_file'}:
+                if tool=='edit_file':
+                    current,_=self.read(proposal['path'],True)
+                    if digest(current)!=proposal['sha256']: raise Denied('File changed while awaiting approval. Nothing was written.')
                 backup_id=uuid.uuid4().hex
-                backup={'id':backup_id,'path':proposal['path'],'before':proposal['_before'].decode(),'after_sha256':proposal['after_sha256'],'mode':proposal['_mode']}
+                backup={'id':backup_id,'path':proposal['path'],'before':proposal.get('_before',b'').decode(),'created':tool=='create_file','after_sha256':proposal['after_sha256'],'mode':proposal['_mode']}
                 save_json(self.data/'backups'/f'{backup_id}.json',backup)
-                self.atomic_replace(proposal['path'],proposal['_after'],proposal['_mode'])
+                self.atomic_replace(proposal['path'],proposal['_after'],proposal['_mode'],create=tool=='create_file')
                 result={'changed':proposal['path'],'backup_id':backup_id,'sha256':proposal['after_sha256']}
+            elif tool=='create_directory':
+                directory,name,path=self.parent_fd(proposal['path'],True)
+                try: os.mkdir(name,0o755,dir_fd=directory)
+                finally: os.close(directory)
+                result={'created_directory':str(path)}
             else:
                 result=self.process(proposal['argv'],proposal['cwd'],timeout=90,elevated=proposal['admin'])
         else: raise Denied('Unknown tool. No action was executed.')
@@ -271,11 +296,16 @@ class Tools:
         backup=read_json(self.data/'backups'/f'{backup_id}.json',{})
         current,_=self.read(backup['path'],True)
         if digest(current)!=backup['after_sha256']: raise Denied('File has changed since the assistant edit. Automatic rollback would overwrite newer work.')
-        proposal={'tool':'rollback','path':backup['path'],'risk':'Restore the saved contents of this file.',
+        proposal={'tool':'rollback','path':backup['path'],'risk':'Remove the unchanged file created by the assistant.' if backup.get('created') else 'Restore the saved contents of this file.',
                   'diff':''.join(difflib.unified_diff(current.decode().splitlines(True),backup['before'].splitlines(True),fromfile='Current',tofile='Restore'))}
         if not self.approve(proposal): raise Denied('Rollback cancelled.')
         self.check_cancel()
         latest,_=self.read(backup['path'],True)
         if latest!=current: raise Denied('File changed during rollback approval.')
-        self.atomic_replace(backup['path'],backup['before'].encode(),backup['mode']); self.record('rollback',path=backup['path'],backup_id=backup_id)
+        if backup.get('created'):
+            directory,name,_=self.parent_fd(backup['path'],True)
+            try: os.unlink(name,dir_fd=directory)
+            finally: os.close(directory)
+        else: self.atomic_replace(backup['path'],backup['before'].encode(),backup['mode'])
+        self.record('rollback',path=backup['path'],backup_id=backup_id)
         return {'restored':backup['path']}

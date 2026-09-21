@@ -1,0 +1,286 @@
+{
+  "image_npu": {
+    "name": "Absolute Reality \u00b7 Hexagon NPU",
+    "kind": "image",
+    "backend": "npu",
+    "license": "Model terms apply; LocalDream runtime: CC BY-NC 4.0",
+    "files": [
+      {
+        "repo": "xororz/sd-qnn",
+        "revision": "64d16039e0c3a71d3c5db1faccc090faae93cb28",
+        "name": "AbsoluteReality_qnn2.28_8gen2.zip",
+        "size": 1054661172,
+        "sha256": "f479f3221fb90d31de1e695577f5aec9a5afb5fb7e076cfac40f00e039b22977",
+        "format": "qnn",
+        "role": "model_id"
+      }
+    ]
+  },
+  "video_npu": {
+    "name": "Neodragon \u00b7 Hexagon NPU",
+    "kind": "video",
+    "backend": "npu",
+    "license": "BSD-3-Clause-Clear plus Neodragon model terms; pipeline: CC BY-NC 4.0",
+    "bundle": "neodragon",
+    "files": [
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "cliplp_v79.bin",
+        "size": 249451112,
+        "sha256": "135afbb0de6d9d02f6808c135f6ad29654a561b1228e478f53fd74035451a91f",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "ctx/cliplp_v79.bin"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "clipg_v79.bin",
+        "size": 1402277416,
+        "sha256": "14b3eedffae9d043d8abb6109feb601b4039e377944ae7770e77dc839fcd47cc",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "ctx/clipg_v79.bin"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "distilt5f_v79.bin",
+        "size": 260050504,
+        "sha256": "5a359f74ca88ea3d382e9045a2a2020749ad3fac6b79851cb3f0987430d1d17b",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "ctx/distilt5f_v79.bin"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "ctxadaptfp16_v79.bin",
+        "size": 260531784,
+        "sha256": "3a36983433862425e84375d09696f42d7c5f08ffdb93ab775955b16ab9f38be0",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "ctx/ctxadaptfp16_v79.bin"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "vaeenc_v79.bin",
+        "size": 41667768,
+        "sha256": "16ea108929fdd311179a1317c77542926986b3225c377cf3275bf2218ceb1c65",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "ctx/vaeenc_v79.bin"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "mmdit_s0fs_v79.bin",
+        "size": 1525163128,
+        "sha256": "2e8f1424946b685dcf452645195d3b07e7a3c3a4319ec5477d6acc7d043799c3",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "ctx/mmdit_s0fs_v79.bin"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "mmdit_s1fs_v79.bin",
+        "size": 1533523064,
+        "sha256": "ffde0039df8dfacd7bd45d272f710a7ba8d6e26cd1b117511bfa78932c00a78b",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "ctx/mmdit_s1fs_v79.bin"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "mmdit_s2fs_v79.bin",
+        "size": 1573344888,
+        "sha256": "1c3a469b8035809a7ef49e767ab2a1bf9c6268c705c01175e11b65db8713bf52",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "ctx/mmdit_s2fs_v79.bin"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "vaedecsn_v79.bin",
+        "size": 12104632,
+        "sha256": "8e4f6932a1868c95931852986b9d1ad34df37d21b872921be5cb80891e41bd3b",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "ctx/vaedecsn_v79.bin"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "quicksrm2x_v79.bin",
+        "size": 377880,
+        "sha256": "ed68c4f6087d33fdcdde7fbee0b677890770f5f000cfa114dd641a74636edd25",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "ctx/quicksrm2x_v79.bin"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "clipl_v79.bin",
+        "size": 233993824,
+        "sha256": "70f33dd9861dd4c55e94cf9d712b8065e5207f22e0c8a9abc2d213d8fa2424e9",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "ctx/clipl_v79.bin"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "ssd1bunet_v79.bin",
+        "size": 1358184480,
+        "sha256": "9e5e13d33edee384a1c4c742bfd2fe03c3be5500beb4c190b738e0dee628ab0a",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "ctx/ssd1bunet_v79.bin"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "ssd1bvaedec_v79.bin",
+        "size": 85467216,
+        "sha256": "562bf3c50d9ae6e7e9c9c2f6b9646d59512e511a0de22b7c5e8ebccfd861e90b",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "ctx/ssd1bvaedec_v79.bin"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "assets/pipeline_config.json",
+        "size": 565,
+        "sha256": "2ff164699d5242de3a45fe74d7ac05310ff2f7e88e77d84a989cc020e58ae4f8",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "assets/pipeline_config.json"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "assets/video_structure.json",
+        "size": 12972,
+        "sha256": "ace9786cfded6a20b3e4262ce46c91a4eea4458d03d99293b3695531377326a4",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "assets/video_structure.json"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "assets/video_structure.ndw",
+        "size": 4402736,
+        "sha256": "dc937773f691f54ba4b664964992e15d805f55c1495d8a5c09481779bf11cbf7",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "assets/video_structure.ndw"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "assets/mmdit_temb.ndw",
+        "size": 33055080,
+        "sha256": "29ab941f7f8b144efee864e6e8d80763072f4ead5f439777ce8fea1ac94e8677",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "assets/mmdit_temb.ndw"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "assets/ssd1b_addembed.ndw",
+        "size": 20981936,
+        "sha256": "eb3d5671fc56962110d5591a01d8167324785823088bcc6570fee371a5f881bd",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "assets/ssd1b_addembed.ndw"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "assets/clip_vocab.json",
+        "size": 1059962,
+        "sha256": "e089ad92ba36837a0d31433e555c8f45fe601ab5c221d4f607ded32d9f7a4349",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "assets/clip_vocab.json"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "assets/clip_merges.txt",
+        "size": 524619,
+        "sha256": "9fd691f7c8039210e0fced15865466c65820d09b63988b0174bfe25de299051a",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "assets/clip_merges.txt"
+      },
+      {
+        "repo": "AbrahamPJ/neodragon-npu-s25u",
+        "revision": "fde55241e028a8a4bd7b9aec312838488b73aa55",
+        "name": "assets/t5_unigram.tsv",
+        "size": 649836,
+        "sha256": "f760a0887abad1ac2f8182df4798aa349fb864306e653058c28d6071d299369a",
+        "format": "data",
+        "role": "component",
+        "bundle_path": "assets/t5_unigram.tsv"
+      }
+    ]
+  },
+  "image": {
+    "name": "Stable Diffusion 1.5 \u00b7 phone CPU",
+    "files": [
+      {
+        "repo": "second-state/stable-diffusion-v1-5-GGUF",
+        "revision": "031b5f5df991f511b3f5fa8fed6d99048ababb69",
+        "name": "stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf",
+        "size": 1566768416,
+        "sha256": "b8944e9fe0b69b36ae1b5bb0185b3a7b8ef14347fe0fa9af6c64c4829022261f",
+        "format": "gguf",
+        "role": "model_id"
+      }
+    ],
+    "license": "CreativeML OpenRAIL-M"
+  },
+  "video": {
+    "name": "Wan 2.1 1.3B \u00b7 phone CPU",
+    "files": [
+      {
+        "repo": "samuelchristlie/Wan2.1-T2V-1.3B-GGUF",
+        "revision": "5a512b15fc35d1b67a074cfe55a591be9e9ef9b5",
+        "name": "Wan2.1-T2V-1.3B-Q4_K_M.gguf",
+        "size": 982716640,
+        "sha256": "1e22a68152e6c4432524c61c78185efa35e6b305483ceb5fe238b2d51964cea7",
+        "format": "gguf",
+        "role": "model_id"
+      },
+      {
+        "repo": "city96/umt5-xxl-encoder-gguf",
+        "revision": "b535255bee98c2b0a59ea7c0ae2dcd0c6657b3b7",
+        "name": "umt5-xxl-encoder-Q3_K_S.gguf",
+        "size": 2858489696,
+        "sha256": "f64f8d6dc4d8a24276df69d0ccea789aae686f7417950a41e6568c30cb478a5c",
+        "format": "gguf",
+        "role": "encoder_id"
+      },
+      {
+        "repo": "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
+        "revision": "617a7633e636506f850e043bc4605f290a466a8e",
+        "name": "split_files/vae/wan_2.1_vae.safetensors",
+        "size": 253815318,
+        "sha256": "2fc39d31359a4b0a64f55876d8ff7fa8d780956ae2cb13463b0223e15148976b",
+        "format": "safetensors",
+        "role": "vae_id"
+      }
+    ],
+    "license": "Apache-2.0 (Wan); model-specific terms on linked Hub pages"
+  }
+}

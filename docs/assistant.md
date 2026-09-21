@@ -1,4 +1,4 @@
-# PC Assistant, projects and spreadsheets (v0.3)
+# PC Assistant, projects and spreadsheets (v0.6)
 
 ## Workspaces
 
@@ -20,6 +20,28 @@ questions. This is keyword retrieval, not a complete semantic search of every fi
 Project instructions and selected reference excerpts are sent to the phone model.
 Original linked files are not uploaded to a cloud service. Project metadata lives
 in `~/.local/share/jiezhi/projects` (or the XDG data location).
+
+## Project chat actions
+
+Project chat uses the guarded tool loop directly. Ask for a deliverable, then
+review the proposed creation/edit diff; the host writes approved files to the PC.
+A project without linked folders gets its own folder under
+`~/Documents/JieZhi Projects/<name>-<id>`. Its path, an **Open folder** button and
+an access-mode selector appear above chat. Existing linked folders are used in
+place. Global PC Assistant folders do not extend project-chat file access.
+
+New UTF-8 files and subfolders can be created. Existing files require inspection
+before editing. Creation never overwrites an existing file, including a file
+created by another program while approval was pending. File writes remain limited
+to 64 KiB; binary document authoring requires separately reviewed commands.
+Saved paths and action decisions appear in the conversation and persist in history.
+Rollback can remove an unchanged assistant-created file or restore an edited file.
+Folder creation has no automatic rollback.
+
+Project chat prepares the currently selected model with an 8192-token context
+when necessary; it does not select a different model. Each task is limited to
+12 steps. Small-model tool reliability still depends on the model. Generated code
+is only verified when an approved verification command succeeds.
 
 ## Spreadsheets
 
@@ -53,7 +75,7 @@ JieZhi's own state, symlinks and hard-linked files are excluded from file tools.
 
 The default is **Ask before changes**, as selected by the user.
 
-| Mode | Diagnostics and scoped reads | File edits | Commands |
+| Mode | Diagnostics and scoped reads | File creation and edits | Commands |
 | --- | --- | --- | --- |
 | Read-only | Automatic | Blocked | Blocked |
 | Ask before changes | Automatic | Approve each diff | Approve each command |

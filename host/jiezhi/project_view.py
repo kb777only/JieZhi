@@ -1,6 +1,6 @@
 from pathlib import Path
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QHBoxLayout, QListWidget, QListWidgetItem, QPlainTextEdit, QFileDialog, QInputDialog, QMessageBox
+from PySide6.QtWidgets import QHBoxLayout, QListWidget, QListWidgetItem, QPlainTextEdit, QFileDialog, QInputDialog, QMessageBox, QSplitter, QWidget, QVBoxLayout
 from .projects import Projects
 from .attachments import extract
 from .pc_tools import sensitive
@@ -10,16 +10,21 @@ class ProjectView:
     def build_projects(self):
         from .gui import button,label
         self.project_store=Projects(); self.active_project=None
-        layout=self.page('A home for every project.', 'Keep related conversations, references and folders together. Folder access also applies to PC Assistant in this project.')
-        row=QHBoxLayout(); row.addWidget(button('New project',self.create_project,True)); row.addWidget(button('Use selected project',self.use_project)); row.addWidget(button('Leave project',self.leave_project)); row.addStretch(); layout.addLayout(row)
-        self.project_list=QListWidget(); self.project_list.setMaximumHeight(155); self.project_list.itemClicked.connect(self.show_project); layout.addWidget(self.project_list)
-        self.project_title=label('Select a project to manage its context.','badge',True);layout.addWidget(self.project_title)
-        self.project_notes=QPlainTextEdit(); self.project_notes.setPlaceholderText('Project instructions or goals (up to 500 characters)…'); self.project_notes.setMaximumHeight(90);layout.addWidget(self.project_notes)
-        row=QHBoxLayout();row.addWidget(button('Save instructions',self.save_project_notes));row.addWidget(button('Link folder…',self.link_project_folder));row.addWidget(button('Add reference files…',self.project_add_files));layout.addLayout(row)
-        self.project_files=QListWidget();layout.addWidget(self.project_files,1)
-        row=QHBoxLayout();row.addWidget(button('Attach selected file to chat',self.project_attach_selected));row.addWidget(button('Remove selected reference / folder',self.remove_project_reference));row.addWidget(button('Refresh folder index',self.refresh_project_index));layout.addLayout(row)
-        layout.addWidget(label('Linked files remain in place. Reference files save extracted text locally. Automatic lookup considers up to 40 indexed files and sends at most three references. Hidden credential folders, symlinks and build directories are excluded.','muted',True))
-        self.reload_projects()
+        layout=self.page('Room for your next idea.', 'One workspace for conversations, documents, folders and shared context.')
+        split=QSplitter(Qt.Orientation.Horizontal)
+        left=QWidget();rail=QVBoxLayout(left);rail.setContentsMargins(0,0,10,0)
+        rail.addWidget(button('＋ New project',self.create_project,True))
+        self.project_list=QListWidget();self.project_list.setMinimumWidth(205);self.project_list.itemClicked.connect(self.show_project);rail.addWidget(self.project_list,1)
+        rail.addWidget(button('Open project chat',self.use_project));rail.addWidget(button('Return to personal chat',self.leave_project));split.addWidget(left)
+        right=QWidget();detail=QVBoxLayout(right);detail.setContentsMargins(12,0,0,0);detail.setSpacing(14)
+        self.project_title=label('Select a project to begin.','badge',True);detail.addWidget(self.project_title)
+        self.project_notes=QPlainTextEdit();self.project_notes.setPlaceholderText('What are you working toward? Add shared instructions…');self.project_notes.setMinimumHeight(110);self.project_notes.setMaximumHeight(150);detail.addWidget(self.project_notes)
+        row=QHBoxLayout();row.addWidget(button('Save instructions',self.save_project_notes));row.addStretch();row.addWidget(button('Link folder…',self.link_project_folder));row.addWidget(button('Add files…',self.project_add_files));detail.addLayout(row)
+        detail.addWidget(label('REFERENCE LIBRARY','muted'))
+        self.project_files=QListWidget();detail.addWidget(self.project_files,1)
+        row=QHBoxLayout();row.addWidget(button('Attach to chat',self.project_attach_selected));row.addWidget(button('Remove reference',self.remove_project_reference));row.addWidget(button('Refresh folders',self.refresh_project_index));detail.addLayout(row)
+        detail.addWidget(label('Original files stay in place. Linked folders also define this project’s PC Assistant scope.','muted',True))
+        split.addWidget(right);split.setSizes([230,750]);layout.addWidget(split,1);self.reload_projects()
     def reload_projects(self):
         self.project_list.clear()
         for project in self.project_store.all():
@@ -50,15 +55,16 @@ class ProjectView:
         if self.busy:return
         project=self.chosen_project()
         if not project:return
-        self.active_project=project;self.new_chat();self.project_badge.setText('Project · '+project['name']);self.refresh_history()
+        self.active_project=project;self.new_chat();self.refresh_project_chat_controls();self.refresh_history()
     def leave_project(self):
         if self.busy:return
         self.active_project=None;self.new_chat();self.project_badge.setText('Personal conversation · No project');self.refresh_history()
     def persist_project(self,project):
         self.project_store.save(project)
         item=self.project_list.currentItem()
-        if item:item.setData(Qt.ItemDataRole.UserRole,project);self.show_project(item)
+        if item and item.data(Qt.ItemDataRole.UserRole)['id']==project['id']:item.setData(Qt.ItemDataRole.UserRole,project);self.show_project(item)
         if self.active_project and self.active_project['id']==project['id']:self.active_project=project
+        self.refresh_project_chat_controls()
     def save_project_notes(self):
         if self.busy:return
         p=self.chosen_project()
