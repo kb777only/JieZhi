@@ -4,6 +4,11 @@ All notable changes to JieZhi are documented here.
 
 ## Unreleased
 
+- Add in-app updates: JieZhi reads its own GitHub releases, offers the patch
+  notes of a newer one, and replaces the installed bundle in place after
+  verifying its published checksum, then restarts. A sliding panel asks once
+  whether to check on every launch; the replaced bundle is kept until the next
+  launch so the process being updated can finish reading itself out of it.
 - Add an OpenAI-compatible endpoint (`jiezhi-gateway`) so third-party AI workspaces
   can use the phone's NPU: model listing, streamed and whole chat completions,
   legacy completions, on-demand model loading and per-phone request queueing.

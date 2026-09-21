@@ -7,40 +7,7 @@ import sys
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QProgressBar, QMessageBox
 
 from .gui import STYLE, Worker, label
-
-INSTALL_DIR = Path.home() / ".local/opt/jiezhi"
-DESKTOP_FILE = Path.home() / ".local/share/applications/jiezhi.desktop"
-
-
-def install_bundle(source: Path, destination: Path = INSTALL_DIR, desktop_file: Path = DESKTOP_FILE):
-    """Stage the full self-contained bundle, then atomically replace an installation."""
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    stage = destination.with_name(destination.name + ".installing")
-    backup = destination.with_name(destination.name + ".previous")
-    if stage.exists():
-        shutil.rmtree(stage)
-    shutil.copytree(source, stage, symlinks=True)
-    if not (stage / "JieZhi").is_file():
-        raise RuntimeError("Incomplete installer: missing JieZhi executable.")
-    if backup.exists():
-        shutil.rmtree(backup)
-    if destination.exists():
-        destination.rename(backup)
-    try:
-        stage.rename(destination)
-        desktop_file.parent.mkdir(parents=True, exist_ok=True)
-        executable = str(destination / "JieZhi").replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`").replace("$", "\\$")
-        desktop_file.write_text(f'[Desktop Entry]\nType=Application\nName=JieZhi 借智\nComment=Borrow intelligence from your Android phone\nExec="{executable}"\nIcon={destination}/_internal/assets/jiezhi.svg\nTerminal=false\nCategories=Utility;\n')
-        desktop_file.chmod(0o644)
-    except Exception:
-        if destination.exists():
-            shutil.rmtree(destination)
-        if backup.exists():
-            backup.rename(destination)
-        raise
-    if backup.exists():
-        shutil.rmtree(backup)
-    return str(destination)
+from .updates import INSTALL_DIR, DESKTOP_FILE, install_bundle  # noqa: F401  (the installer's public surface)
 
 
 class Installer(QWidget):
