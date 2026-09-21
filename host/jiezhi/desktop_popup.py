@@ -52,8 +52,9 @@ class AreaSelector(QWidget):
 
 class ResultPopup(QWidget):
     stop_requested=Signal()
+    closed=Signal()
     def __init__(self,title,anchor,parent=None):
-        super().__init__(parent);floating(self);self.resize(500,410);self.path=None
+        super().__init__(parent);floating(self);self.resize(500,410);self.path=None;self.drag=None
         box=QVBoxLayout(self);box.setContentsMargins(18,18,18,18)
         row=QHBoxLayout();self.title=QLabel(title);row.addWidget(self.title,1);close=QPushButton('×');close.setFixedWidth(35);close.clicked.connect(self.close);row.addWidget(close);box.addLayout(row)
         self.status=QLabel('Preparing…');self.status.setWordWrap(True);box.addWidget(self.status)
@@ -75,11 +76,23 @@ class ResultPopup(QWidget):
             import shutil
             if Path(name).resolve()!=self.path.resolve():shutil.copyfile(self.path,name)
         else:Path(name).write_text(self.text.toPlainText())
+    def closeEvent(self,event):
+        self.closed.emit();super().closeEvent(event)
+    def keyPressEvent(self,event):
+        if event.key()==Qt.Key.Key_Escape:self.close()
+        else:super().keyPressEvent(event)
+    def mousePressEvent(self,event):
+        # A frameless result has no title bar, so its body drags the window.
+        if event.button()==Qt.MouseButton.LeftButton:self.drag=event.globalPosition().toPoint()-self.frameGeometry().topLeft()
+    def mouseMoveEvent(self,event):
+        if self.drag is not None and event.buttons()&Qt.MouseButton.LeftButton:self.move(event.globalPosition().toPoint()-self.drag)
+    def mouseReleaseEvent(self,event):
+        self.drag=None
 
 
 class DesktopPopup:
     def __init__(self,host):
-        self.host=host;self.pointer=None;self.previous_mask=0;self.hover_since=None;self.context=None;self.anchor=QPoint();self.last_text='';self.expires=0;self.probing=False
+        self.host=host;self.pointer=None;self.previous_mask=0;self.hover_since=None;self.context=None;self.anchor=QPoint();self.last_text='';self.expires=0;self.probing=False;self.menu_left=None
         self.chip=QPushButton();floating(self.chip,True);self.chip.setFixedSize(46,46);self.chip.setIcon(QIcon(str(asset('jiezhi.svg'))));self.chip.setIconSize(QSize(32,32));self.chip.setToolTip('Hover for 350 ms for JieZhi actions');self.chip.clicked.connect(self.expand)
         self.menu=QWidget();floating(self.menu);self.menu.setFixedWidth(240);self.menu_box=QVBoxLayout(self.menu);self.menu_box.setContentsMargins(12,12,12,12)
         self.toast=QLabel();floating(self.toast,True);self.toast.setMargin(14);self.toast.setWordWrap(True);self.toast.setMaximumWidth(460)
@@ -96,7 +109,7 @@ class DesktopPopup:
             except Exception:enabled=False
         if enabled:self.timer.start()
         else:self.timer.stop();self.settle.stop();self.hide()
-    def hide(self):self.chip.hide();self.menu.hide();self.hover_since=None;self.context=None
+    def hide(self):self.chip.hide();self.menu.hide();self.hover_since=None;self.menu_left=None;self.context=None
     def selection_changed(self):
         if self.timer.isActive() and not QApplication.clipboard().ownsSelection():self.settle.start()
     def selection_ready(self):
@@ -121,6 +134,10 @@ class DesktopPopup:
         if mask & (1<<8) and not self.previous_mask & (1<<8):
             if not self.menu.geometry().contains(cursor) and not self.chip.geometry().contains(cursor):self.hide()
         self.previous_mask=mask
+        if self.menu.isVisible():
+            if self.menu.geometry().adjusted(-40,-40,40,40).contains(cursor) or self.chip.geometry().adjusted(-40,-40,40,40).contains(cursor):self.menu_left=None
+            elif self.menu_left is None:self.menu_left=time.monotonic()
+            elif time.monotonic()-self.menu_left>=.9:self.hide()
         if self.chip.isVisible() and not self.menu.isVisible():
             if self.chip.geometry().contains(cursor):
                 if self.hover_since is None:self.hover_since=time.monotonic()
@@ -144,14 +161,14 @@ class DesktopPopup:
         while self.menu_box.count():
             item=self.menu_box.takeAt(0)
             if item.widget():item.widget().deleteLater()
-        title=QLabel('Selected text' if self.context['kind']=='text' else ('Detected image' if self.context.get('rect') else 'Image tools · select area'))
-        self.menu_box.addWidget(title)
+        heading=QLabel('Selected text' if self.context['kind']=='text' else ('Detected image' if self.context.get('rect') else 'Image tools · select area'))
+        self.menu_box.addWidget(heading)
         if self.host.busy:self.menu_box.addWidget(QLabel('Finish or stop the current task first.'))
         actions=TEXT_ACTIONS if self.context['kind']=='text' else IMAGE_ACTIONS
         for key,title in actions.items():
             b=QPushButton(title);b.setEnabled(not self.host.busy);b.clicked.connect(lambda checked=False,k=key:self.activate(k));self.menu_box.addWidget(b)
         close=QPushButton('Dismiss');close.clicked.connect(self.hide);self.menu_box.addWidget(close)
-        self.menu.adjustSize();place(self.menu,self.chip.pos()+QPoint(30,-18));self.menu.show();self.menu.raise_()
+        self.menu_left=None;self.menu.adjustSize();place(self.menu,self.chip.pos()+QPoint(30,-18));self.menu.show();self.menu.raise_()
     def activate(self,action):
         if self.host.busy:self.notify('JieZhi is busy · finish or stop the current task first',self.anchor,2500);return
         context=dict(self.context);anchor=QPoint(self.anchor);self.hide()
@@ -160,7 +177,10 @@ class DesktopPopup:
         rect=context.get('rect')
         if rect:
             def capture():
-                screen=QApplication.screenAt(anchor) or QApplication.primaryScreen();image=screen.grabWindow(0,*rect).toImage()
+                screen=QApplication.screenAt(anchor) or QApplication.primaryScreen()
+                # Accessibility extents are device pixels; grabWindow takes logical coordinates.
+                ratio=screen.devicePixelRatio();area=[round(value/ratio) for value in rect]
+                image=screen.grabWindow(0,*area).toImage()
                 if not image.isNull():selected(image)
                 else:self.select_area(anchor,selected)
             QTimer.singleShot(150,capture)

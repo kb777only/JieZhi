@@ -80,6 +80,10 @@ class DesktopActionsView:
             if not ok or not prompt.strip():return
         if action=='variations':prompt='A variation of this image, preserving the subject, style and overall composition.'
         result=ResultPopup(title,anchor);self.quick_results.append(result);result.setStyleSheet(self.styleSheet());self.quick_result=result;result.show();self.quick_cancel.clear()
+        def forget():
+            if result in self.quick_results:self.quick_results.remove(result)
+            result.deleteLater()
+        result.closed.connect(forget)
         def stop():
             self.quick_cancel.set();result.status.setText('Stopping…')
             from .gui import Worker
