@@ -115,7 +115,9 @@ class Client:
         if not apk.exists():
             apk = ROOT / "android/app/build/outputs/apk/debug/app-debug.apk"
         if not apk.exists():
-            raise RuntimeError("Android APK is missing; build the client or reinstall the desktop package.")
+            # Nothing built this client locally, so take the one CI published.
+            from .updates import fetch_client
+            apk = fetch_client()
         return adb("install", "-r", str(apk), serial=serial, timeout=180)
 
     def url(self, path: str):

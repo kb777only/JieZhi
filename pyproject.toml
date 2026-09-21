@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.0,<10", "pytest-qt>=4.5,<5", "pyinstaller>=6.0,<7"]
+dev = ["pytest>=9.0,<10", "pytest-qt>=4.5,<5"]
 
 [project.scripts]
 jiezhi = "main:main"
