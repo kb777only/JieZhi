@@ -1,11 +1,16 @@
 """Non-activating selection chip, hover menu and cursor-adjacent results."""
 import time
 from pathlib import Path
-from PySide6.QtCore import Qt,QTimer,QPoint,QRect,Signal,QSize
+from PySide6.QtCore import Qt,QTimer,QPoint,QRect,Signal,QSize,QPropertyAnimation,QEasingCurve
 from PySide6.QtGui import QCursor,QIcon,QPixmap,QPainter,QColor,QPen
 from PySide6.QtWidgets import QApplication,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QTextBrowser,QFileDialog
 from .client import asset
 from .desktop_surface import X11Pointer,probe_image_rect
+
+CHIP_SIZE=QSize(40,26)
+CHIP_ICON=QSize(18,18)
+CHIP_STYLE='QPushButton#chip {padding:0;border-radius:8px;}'
+CHIP_FADE=140
 
 TEXT_ACTIONS={'summarize':'Summarize','rewrite':'Rewrite','continue':'Continue writing','explain':'Explain','translate':'Translate','generate':'Generate as an image'}
 IMAGE_ACTIONS={'rework':'Rework image','upscale':'Upscale 2×','expand':'Expand image','variations':'Create a variation'}
@@ -93,7 +98,8 @@ class ResultPopup(QWidget):
 class DesktopPopup:
     def __init__(self,host):
         self.host=host;self.pointer=None;self.previous_mask=0;self.hover_since=None;self.context=None;self.anchor=QPoint();self.last_text='';self.expires=0;self.probing=False;self.menu_left=None
-        self.chip=QPushButton();floating(self.chip,True);self.chip.setFixedSize(46,46);self.chip.setIcon(QIcon(str(asset('jiezhi.svg'))));self.chip.setIconSize(QSize(32,32));self.chip.setToolTip('Hover for 350 ms for JieZhi actions');self.chip.clicked.connect(self.expand)
+        self.chip=QPushButton();self.chip.setObjectName('chip');floating(self.chip,True);self.chip.setFixedSize(CHIP_SIZE);self.chip.setIcon(QIcon(str(asset('jiezhi.svg'))));self.chip.setIconSize(CHIP_ICON);self.chip.setToolTip('Hover for 350 ms for JieZhi actions');self.chip.clicked.connect(self.expand)
+        self.fade=QPropertyAnimation(self.chip,b'windowOpacity',host);self.fade.setDuration(CHIP_FADE);self.fade.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.menu=QWidget();floating(self.menu);self.menu.setFixedWidth(240);self.menu_box=QVBoxLayout(self.menu);self.menu_box.setContentsMargins(12,12,12,12)
         self.toast=QLabel();floating(self.toast,True);self.toast.setMargin(14);self.toast.setWordWrap(True);self.toast.setMaximumWidth(460)
         self.toast_timer=QTimer(host);self.toast_timer.setSingleShot(True);self.toast_timer.timeout.connect(self.toast.hide)
@@ -103,13 +109,14 @@ class DesktopPopup:
         self.configure()
     def configure(self):
         for widget in (self.chip,self.menu,self.toast):widget.setStyleSheet(self.host.styleSheet())
+        self.chip.setStyleSheet(self.host.styleSheet()+CHIP_STYLE)
         enabled=self.host.preferences.get('desktop_popup',True) and QApplication.platformName()=='xcb'
         if enabled and self.pointer is None:
             try:self.pointer=X11Pointer()
             except Exception:enabled=False
         if enabled:self.timer.start()
         else:self.timer.stop();self.settle.stop();self.hide()
-    def hide(self):self.chip.hide();self.menu.hide();self.hover_since=None;self.menu_left=None;self.context=None
+    def hide(self):self.fade.stop();self.chip.hide();self.menu.hide();self.hover_since=None;self.menu_left=None;self.context=None
     def selection_changed(self):
         if self.timer.isActive() and not QApplication.clipboard().ownsSelection():self.settle.start()
     def selection_ready(self):
@@ -122,7 +129,11 @@ class DesktopPopup:
         if text:
             self.last_text=text;self.offer({'kind':'text','text':text[:32000]},QCursor.pos())
     def offer(self,context,anchor):
-        self.hide();self.context=context;self.anchor=QPoint(anchor);place(self.chip,anchor);self.chip.show();self.chip.raise_();self.expires=time.monotonic()+12
+        self.hide();self.context=context;self.anchor=QPoint(anchor);place(self.chip,anchor)
+        # The chip appears over someone else's window, so it fades in rather than snapping on.
+        self.chip.setWindowOpacity(0.0);self.chip.show();self.chip.raise_()
+        self.fade.setStartValue(0.0);self.fade.setEndValue(1.0);self.fade.start()
+        self.expires=time.monotonic()+12
     def poll(self):
         if not self.pointer:return
         state=self.pointer.state()

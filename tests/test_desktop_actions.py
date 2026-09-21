@@ -92,3 +92,13 @@ def test_detected_image_rect_is_converted_from_device_pixels(qtbot,tmp_path,monk
     p.activate('upscale');qtbot.waitUntil(lambda:bool(grabs))
     assert grabs==[(50,100,150,200)]
     w.close()
+
+
+def test_chip_is_compact_and_fades_in(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
+    assert p.chip.width()>p.chip.height() and p.chip.width()<46
+    p.offer({'kind':'text','text':'Selected passage'},QPoint(400,200))
+    assert p.chip.windowOpacity()<1 and p.fade.state()==popup.QPropertyAnimation.State.Running
+    qtbot.waitUntil(lambda:p.fade.state()==popup.QPropertyAnimation.State.Stopped)
+    assert p.chip.windowOpacity()==1
+    w.close()
