@@ -35,6 +35,20 @@ packaging flow.
 7. Open **Chat** and send a message. Use **Diagnostics** to inspect native runtime
    logs. CPU mode is an explicit diagnostic option and is labelled as such.
 
+## Staying up to date
+
+JieZhi checks its own GitHub releases. The first launch asks, in a panel that
+slides into the corner, whether it should look for a new version on every start;
+the answer lives under **Settings → Updates**, where there is also a
+**Check for updates** button. When a newer release exists, a panel says so and
+opens its patch notes with **Exit** and **Update**.
+
+Updating downloads the release's Linux bundle, verifies it against the published
+`SHA256SUMS`, replaces `~/.local/opt/jiezhi` atomically and restarts. Nothing is
+replaced until the download has been verified, so leaving the box at any earlier
+point changes nothing. The phone client is not updated with it: reinstall it from
+**Welcome & device** after a version change. See `docs/updates.md`.
+
 ## Appearance, settings and creative workflows
 
 The upper-right gear opens Settings: Hugging Face account, theme, gradient motion,
@@ -232,10 +246,12 @@ debug signing key: this is a sideloadable proof of concept, not a store release.
 - `host/jiezhi/hub.py`: Hub account, model metadata, resumable verified downloads.
 - `host/jiezhi/*_view.py`: attachment and Hub GUI flows.
 - `host/jiezhi/installer.py`: per-user graphical installer and uninstaller.
+- `host/jiezhi/updates.py`: release checks, verified downloads and the atomic bundle swap.
 - `android/app/src/main/java/dev/jiezhi/client/`: Android UI, foreground service,
   model store, HTTP bridge, and native inference adapter.
 - `docs/protocol.md`: versioned protocol and state behavior.
 - `docs/gateway.md`: third-party endpoint, model naming, queueing and security.
+- `docs/updates.md`: release checks, what an update replaces, and what a release must carry.
 - `docs/recommendations.md`: phone-fit scoring, memory, and speed assumptions.
 - `tests/`: host transport/error handling and installation checks.
 

@@ -25,6 +25,7 @@ from .assistant_view import AssistantView
 from .telemetry_view import TelemetryPanel
 from .appearance import DeviceWelcome
 from .settings_view import SettingsView
+from .update_view import UpdatesView
 from .workflow_view import WorkflowView
 
 from .theme import (
@@ -174,7 +175,7 @@ def card(*children, spacing=MD, padding=MD):
     return panel
 
 
-class Window(DesktopActionsView, ProjectChatView, SettingsView, WorkflowView, HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
+class Window(DesktopActionsView, ProjectChatView, SettingsView, UpdatesView, WorkflowView, HubView, AttachmentView, ProjectView, AssistantView, QMainWindow):
     def __init__(self):
         super().__init__()
         self.preferences_path=DATA/'preferences.json';self.preferences=read_json(self.preferences_path,{})
@@ -193,7 +194,7 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, WorkflowView, Hu
         layout.addLayout(content, 1)
         self.pages = QStackedWidget(); content.addWidget(self.pages, 1)
         self.telemetry_panel = TelemetryPanel(self.client, self); content.addWidget(self.telemetry_panel)
-        self.build_chat(); self.build_models(); self.build_setup(); self.build_diagnostics(); self.build_hub(); self.build_projects(); self.build_assistant(); self.build_workflows(); self.build_settings(); self.init_desktop_popup()
+        self.build_chat(); self.build_models(); self.build_setup(); self.build_diagnostics(); self.build_hub(); self.build_projects(); self.build_assistant(); self.build_workflows(); self.init_updates(); self.build_settings(); self.init_desktop_popup()
         self.nav.pageChanged.connect(self.pages.setCurrentIndex); self.nav.setCurrentRow(2)
         self.refresh_history(); self.render_chat(); self.apply_appearance()
         self.statusBar().showMessage("Connect your Snapdragon 8 Elite phone to get started.")
@@ -641,7 +642,10 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, WorkflowView, Hu
 
     def closeEvent(self, event):
         self.save_flow_draft()
-        if self.workers:
+        # An update has already replaced this bundle on disk and started its
+        # successor, so the usual "finish what you started" guard would only
+        # keep a stale process alive.
+        if self.workers and not self.restarting:
             self.statusBar().showMessage("Stop the current operation before closing JieZhi."); event.ignore(); return
         if not self.telemetry_panel.shutdown():
             event.ignore(); QTimer.singleShot(250, self.close); return
