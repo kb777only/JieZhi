@@ -74,6 +74,16 @@ Copy/Save controls and loading/generating toasts. The host can remain minimized.
 Set each action's model, translation language and popup toggle in Settings.
 This integration currently targets X11. See [desktop actions](docs/desktop-actions.md).
 
+## Use the phone from other apps
+
+JieZhi serves an OpenAI-compatible API on the desktop, so any workspace that
+takes a custom base URL — Open WebUI, Jan, AnythingLLM, Continue, Cline — can
+send work to the phone's NPU. Pair the phone once, then run `jiezhi-gateway`
+and point the app at `http://127.0.0.1:11435/v1`. Models on the phone appear in
+the app's model list under their filename, and one that is not loaded is loaded
+on demand. The server is loopback-only and refuses non-local Host headers.
+See [third-party endpoint](docs/gateway.md).
+
 ## The hook: a phone-aware local model library
 
 JieZhi does more than move inference to the phone. **Discover models** detects the
@@ -214,6 +224,8 @@ debug signing key: this is a sideloadable proof of concept, not a store release.
 ## Structure
 
 - `host/jiezhi/client.py`: ADB connection, authenticated API, resumable model transfer.
+- `host/jiezhi/devices.py`: registry of attached phones, with capability and connection state.
+- `host/jiezhi/gateway.py`: OpenAI-compatible endpoint and per-phone request routing.
 - `host/jiezhi/gui.py`: chat, model management, setup, history, diagnostics.
 - `host/jiezhi/attachments.py`: local extraction and bounded reference selection.
 - `host/jiezhi/hub.py`: Hub account, model metadata, resumable verified downloads.
@@ -222,6 +234,7 @@ debug signing key: this is a sideloadable proof of concept, not a store release.
 - `android/app/src/main/java/dev/jiezhi/client/`: Android UI, foreground service,
   model store, HTTP bridge, and native inference adapter.
 - `docs/protocol.md`: versioned protocol and state behavior.
+- `docs/gateway.md`: third-party endpoint, model naming, queueing and security.
 - `docs/recommendations.md`: phone-fit scoring, memory, and speed assumptions.
 - `tests/`: host transport/error handling and installation checks.
 
