@@ -3,9 +3,10 @@ import time
 from pathlib import Path
 from PySide6.QtCore import Qt,QTimer,QPoint,QRect,Signal,QSize,QPropertyAnimation,QEasingCurve
 from PySide6.QtGui import QCursor,QIcon,QPixmap,QPainter,QColor,QPen
-from PySide6.QtWidgets import QApplication,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QTextBrowser,QFileDialog
+from PySide6.QtWidgets import QApplication,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QTextBrowser,QFileDialog,QSlider
 from .client import asset
 from .desktop_surface import X11Pointer,probe_image_rect
+from .desktop_styles import STYLE_DIMENSIONS,MAX_WEIGHT,preset
 
 CHIP_SIZE=QSize(40,26)
 CHIP_ICON=QSize(18,18)
@@ -53,6 +54,38 @@ class AreaSelector(QWidget):
         self.close()
     def keyPressEvent(self,event):
         if event.key()==Qt.Key.Key_Escape:self.close()
+
+
+class StylePanel(QWidget):
+    """Preset styles, or sliders that blend them. The generated prompt stays hidden."""
+    chosen=Signal(dict)
+    def __init__(self,weights,anchor):
+        super().__init__();floating(self);self.setFixedWidth(300)
+        box=QVBoxLayout(self);box.setContentsMargins(14,14,14,14);box.addWidget(QLabel('Rewrite as'))
+        self.presets=[]
+        for key,label,_ in STYLE_DIMENSIONS:
+            b=QPushButton(label);b.clicked.connect(lambda checked=False,k=key:self.chosen.emit(preset(k)));box.addWidget(b);self.presets.append(b)
+        self.custom=QPushButton('Custom…');self.custom.clicked.connect(self.show_sliders);box.addWidget(self.custom)
+        self.sliders={};self.rows=[]
+        for key,label,_ in STYLE_DIMENSIONS:
+            row=QWidget();line=QHBoxLayout(row);line.setContentsMargins(0,0,0,0)
+            name=QLabel(label);name.setFixedWidth(96);line.addWidget(name)
+            slider=QSlider(Qt.Orientation.Horizontal);slider.setRange(0,MAX_WEIGHT);slider.setValue(max(0,min(MAX_WEIGHT,int(weights.get(key,0) or 0))))
+            reading=QLabel(str(slider.value()));reading.setFixedWidth(18)
+            slider.valueChanged.connect(lambda value,target=reading:target.setText(str(value)))
+            line.addWidget(slider,1);line.addWidget(reading);row.hide();box.addWidget(row)
+            self.sliders[key]=slider;self.rows.append(row)
+        self.generate=QPushButton('Generate');self.generate.setObjectName('primary');self.generate.clicked.connect(lambda:self.chosen.emit(self.weights()));self.generate.hide();box.addWidget(self.generate)
+        dismiss=QPushButton('Dismiss');dismiss.clicked.connect(self.close);box.addWidget(dismiss)
+        self.adjustSize();place(self,anchor)
+    def show_sliders(self):
+        for row in self.rows:row.show()
+        for b in self.presets:b.hide()
+        self.custom.hide();self.generate.show();self.adjustSize()
+    def weights(self):return {key:slider.value() for key,slider in self.sliders.items()}
+    def keyPressEvent(self,event):
+        if event.key()==Qt.Key.Key_Escape:self.close()
+        else:super().keyPressEvent(event)
 
 
 class ResultPopup(QWidget):
@@ -183,7 +216,10 @@ class DesktopPopup:
     def activate(self,action):
         if self.host.busy:self.notify('JieZhi is busy · finish or stop the current task first',self.anchor,2500);return
         context=dict(self.context);anchor=QPoint(self.anchor);self.hide()
-        if context['kind']=='text':self.host.run_desktop_action(action,context,anchor);return
+        if context['kind']=='text':
+            if action=='rewrite':self.choose_style(context,anchor)
+            else:self.host.run_desktop_action(action,context,anchor)
+            return
         def selected(image):self.host.run_desktop_action(action,{'kind':'image','image':image},anchor)
         rect=context.get('rect')
         if rect:
@@ -196,6 +232,12 @@ class DesktopPopup:
                 else:self.select_area(anchor,selected)
             QTimer.singleShot(150,capture)
         else:QTimer.singleShot(150,lambda:self.select_area(anchor,selected))
+    def choose_style(self,context,anchor):
+        self.style_panel=StylePanel(self.host.preferences.get('rewrite_style_weights',{}),anchor)
+        self.style_panel.setStyleSheet(self.host.styleSheet())
+        def run(weights):
+            self.style_panel.close();self.host.run_desktop_action('rewrite',{**context,'style':weights},anchor)
+        self.style_panel.chosen.connect(run);self.style_panel.show();self.style_panel.activateWindow()
     def select_area(self,anchor,done):
         self.selector=AreaSelector(anchor);self.selector.selected.connect(done);self.selector.show();self.selector.activateWindow()
     def notify(self,text,anchor,timeout=0):
