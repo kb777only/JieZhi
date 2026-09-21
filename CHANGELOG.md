@@ -4,6 +4,17 @@ All notable changes to JieZhi are documented here.
 
 ## Unreleased
 
+- Install and update from the repository itself. A one-line
+  `curl … | sh` puts a git checkout and its own virtual environment in
+  `~/.local/opt/jiezhi`, and an update is a fetch and a fast-forward of that
+  checkout, reinstalling dependencies only when the new commits touched them.
+  The commit messages being taken on are the patch notes. Releases, the
+  PyInstaller bundle and `scripts/package.sh` are gone with it.
+- Refuse to update a checkout with uncommitted changes or one on another
+  branch, since the update moves it with `git reset --hard`. A development
+  clone is safe to point the app at.
+- Build the phone client in CI and publish it to the `prebuilt` branch with its
+  SHA-256, so Device setup can sideload one on a machine with no Android SDK.
 - Start the third-party endpoint whether or not a phone is attached, and pick up
   a paired phone as soon as it appears, so an app can verify its connection
   first. `GET /health` now reports why no model is listed.
