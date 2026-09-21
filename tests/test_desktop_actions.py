@@ -110,7 +110,7 @@ def test_rewrite_asks_for_a_style_before_running(qtbot,tmp_path,monkeypatch):
     monkeypatch.setattr(w,'run_desktop_action',lambda action,context,anchor:calls.append((action,context)))
     p.offer({'kind':'text','text':'Original passage'},QPoint(400,200));p.activate('rewrite')
     assert calls==[] and p.style_panel.isVisible()
-    keys=[key for key,_,_ in styles.STYLE_DIMENSIONS]
+    keys=[key for key,_,_ in styles.STYLE_DIMENSIONS];qtbot.waitUntil(p.style_panel.ready)
     p.style_panel.presets[keys.index('professionalism')].click()
     assert calls[0][0]=='rewrite'
     assert calls[0][1]['style']['professionalism']==styles.MAX_WEIGHT and calls[0][1]['style']['comedy']==0
@@ -121,7 +121,7 @@ def test_custom_reveals_sliders_and_generates_a_blend(qtbot,tmp_path,monkeypatch
     w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup;calls=[]
     monkeypatch.setattr(w,'run_desktop_action',lambda action,context,anchor:calls.append(context['style']))
     p.offer({'kind':'text','text':'Original passage'},QPoint(400,200));p.activate('rewrite')
-    panel=p.style_panel;assert not panel.generate.isVisible()
+    panel=p.style_panel;assert not panel.generate.isVisible();qtbot.waitUntil(panel.ready)
     panel.custom.click();assert panel.generate.isVisible() and panel.rows[0].isVisible()
     panel.sliders['comedy'].setValue(7);panel.sliders['warmth'].setValue(3);panel.generate.click()
     assert calls[0]['comedy']==7 and calls[0]['warmth']==3 and calls[0]['professionalism']==0
@@ -183,4 +183,72 @@ def test_hover_survives_a_pixel_of_drift(qtbot,tmp_path,monkeypatch):
     monkeypatch.setattr(popup.QCursor,'pos',staticmethod(lambda:QPoint(box.center().x(),box.bottom()+2)))
     p.poll();clock[0]+=.4;p.poll()
     assert p.menu.isVisible()
+    w.close()
+
+
+def menu_button(p,label):
+    return next(b for b in p.menu.findChildren(popup.QPushButton) if b.text()==label)
+
+
+def test_the_menu_rewrite_button_opens_the_chooser_rather_than_rewriting(qtbot,tmp_path,monkeypatch):
+    """The button the user actually presses, not activate() called directly."""
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup;calls=[]
+    monkeypatch.setattr(w,'run_desktop_action',lambda action,context,anchor:calls.append((action,context)))
+    p.offer({'kind':'text','text':'Original passage'},QPoint(400,200));p.expand()
+    menu_button(p,'Rewrite').click()
+    assert calls==[] and p.style_panel is not None and p.style_panel.isVisible()
+    assert not p.menu.isVisible()
+    w.close()
+
+
+def test_other_text_actions_still_run_straight_away(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup;calls=[]
+    monkeypatch.setattr(w,'run_desktop_action',lambda action,context,anchor:calls.append(action))
+    p.offer({'kind':'text','text':'Original passage'},QPoint(400,200));p.expand()
+    menu_button(p,'Summarize').click()
+    assert calls==['summarize'] and p.style_panel is None
+    w.close()
+
+
+def test_the_chooser_ignores_the_press_that_opened_it(qtbot,tmp_path,monkeypatch):
+    """It opens under the pointer, so a press landing as it maps must not pick a style."""
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup;calls=[]
+    monkeypatch.setattr(w,'run_desktop_action',lambda action,context,anchor:calls.append(context))
+    p.offer({'kind':'text','text':'Original passage'},QPoint(400,200));p.activate('rewrite')
+    panel=p.style_panel
+    panel.presets[0].click();panel.custom.click();panel.dismiss.click()
+    assert calls==[] and panel.isVisible() and not panel.generate.isVisible()
+    qtbot.waitUntil(panel.ready);panel.presets[0].click()
+    assert len(calls)==1
+    w.close()
+
+
+def test_the_chooser_opens_where_the_pointer_is(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
+    monkeypatch.setattr(w,'run_desktop_action',lambda *a:None)
+    p.offer({'kind':'text','text':'Original passage'},QPoint(400,200));p.expand()
+    spot=menu_button(p,'Rewrite').mapToGlobal(QPoint(20,10))
+    monkeypatch.setattr(popup.QCursor,'pos',staticmethod(lambda:spot))
+    menu_button(p,'Rewrite').click();panel=p.style_panel
+    assert panel.geometry().contains(spot), 'the chooser opened away from the pointer'
+    assert not any(b.geometry().contains(panel.mapFromGlobal(spot)) for b in panel.presets), 'a preset sits under the pointer'
+    w.close()
+
+
+def test_a_click_away_puts_the_chooser_away(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
+    monkeypatch.setattr(w,'run_desktop_action',lambda *a:None)
+    p.offer({'kind':'text','text':'Original passage'},QPoint(400,200));p.activate('rewrite')
+    panel=p.style_panel;qtbot.waitUntil(panel.ready)
+    press(p,panel.geometry().bottomRight()+QPoint(200,200),monkeypatch)
+    assert p.style_panel is None and not panel.isVisible()
+    w.close()
+
+
+def test_a_second_rewrite_replaces_the_first_chooser(qtbot,tmp_path,monkeypatch):
+    w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
+    monkeypatch.setattr(w,'run_desktop_action',lambda *a:None)
+    p.offer({'kind':'text','text':'One'},QPoint(400,200));p.activate('rewrite');first=p.style_panel
+    p.offer({'kind':'text','text':'Two'},QPoint(500,300));p.activate('rewrite');second=p.style_panel
+    assert second is not first and second.isVisible() and not first.isVisible()
     w.close()
