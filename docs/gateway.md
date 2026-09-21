@@ -17,8 +17,12 @@ JieZhi is serving Xiaomi 15 Ultra (Snapdragon 8 Elite) at http://127.0.0.1:11435
   qwen3-1.7b-q4_0@xiaomi-15-ultra
 ```
 
-Pair the phone in the desktop app once first; the gateway reuses the stored
-pairing token. Port 11435 sits beside Ollama's 11434 rather than on top of it.
+The server starts whether or not a phone is attached, so an app can be pointed
+at it and its connection verified before the phone is plugged in. A phone that
+is already paired with this host is picked up within a few seconds of being
+attached; pairing itself still happens in the desktop app, because it needs the
+code shown on the phone's screen. Port 11435 sits beside Ollama's 11434 rather
+than on top of it.
 
 ## Why an endpoint rather than an accelerator backend
 
@@ -71,6 +75,34 @@ When there is more than one phone, this is where the aggregated "JieZhi - Max"
 model will sit: one name in the app's model list, with the router choosing
 which phone answers.
 
+## When an app cannot connect
+
+`GET /health` answers without a phone and says what is wrong:
+
+```
+curl http://127.0.0.1:11435/health
+{"service":"jiezhi","object":"health","devices":[],"ready":false,
+ "trouble":"Xiaomi 15 Ultra is attached but not paired with this host."}
+```
+
+- **The app reports a network error.** Nothing is listening where it looked.
+  Check the gateway is still running and on the port you expect
+  (`curl http://127.0.0.1:11435/health`, or `ss -ltn | grep 11435`).
+- **The app runs in a container.** Open WebUI's Docker image is the common
+  case: inside the container `127.0.0.1` is the container, not your desktop, so
+  the gateway is unreachable no matter what. Either run the container with
+  `--network=host` and keep `http://127.0.0.1:11435/v1`, or serve wider with
+  `jiezhi-gateway --host 0.0.0.0 --api-key SOMEKEY` and point the app at
+  `http://host.docker.internal:11435/v1` with that key. The same applies to any
+  other app in a container, and to Ollama entries that already work or do not.
+- **`ready` is false and `trouble` is empty.** No phone is attached. Plug it in;
+  the model list fills within a few seconds.
+- **`trouble` mentions pairing.** Open the desktop app and pair the phone once.
+- **`trouble` mentions ADB.** The bundled `adb` is not on the path. Install or
+  reinstall the desktop package.
+- **`/v1/models` returns an empty list with `ready` true.** The phone is
+  connected but holds no models. Import one in the desktop app.
+
 ## Security
 
 The server binds `127.0.0.1` and refuses a request whose `Host` header is not
@@ -79,9 +111,13 @@ visiting. It never sends CORS headers, and it requires a JSON content type, so
 a cross-origin page cannot reach it with a simple request either.
 
 `--api-key KEY` makes the gateway require that key as a bearer token; apps that
-insist on a key being filled in can otherwise send anything. `--host` will bind
-elsewhere, but exposing the phone to a network is not the default and should be
-paired with an API key.
+insist on a key being filled in can otherwise send anything.
+
+`--host` binds elsewhere, which is what a containerised app needs, and it
+requires `--api-key` — without one the gateway refuses to start rather than put
+the phone on the network unauthenticated. The loopback `Host` check applies only
+while bound to loopback; once you have deliberately bound wider, the name the
+app uses to reach you is the point of doing so.
 
 Usage figures report generated tokens only. The phone runtime does not count
 prompt tokens, so `prompt_tokens` is reported as 0 rather than guessed.

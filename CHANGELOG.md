@@ -2,6 +2,14 @@
 
 All notable changes to JieZhi are documented here.
 
+## Unreleased
+
+- Start the third-party endpoint whether or not a phone is attached, and pick up
+  a paired phone as soon as it appears, so an app can verify its connection
+  first. `GET /health` now reports why no model is listed.
+- Let `--host` actually serve a containerised app: the loopback `Host` check
+  applies only while bound to loopback, and binding wider requires `--api-key`.
+
 ## 0.8.0-alpha.1 — 2026-09-21
 
 - Add in-app updates: JieZhi reads its own GitHub releases, offers the patch

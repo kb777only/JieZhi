@@ -24,7 +24,8 @@ import threading
 import time
 import uuid
 
-from .devices import DeviceRegistry
+from .client import DATA, read_json
+from .devices import READY, DeviceRegistry
 
 DEFAULT_PORT = 11435  # 11434 belongs to Ollama; sitting beside it is friendlier.
 DEFAULT_CONTEXT = 4096
@@ -74,14 +75,64 @@ class Router:
     """
 
     def __init__(self, registry: DeviceRegistry, context: int = DEFAULT_CONTEXT,
-                 backend: str = DEFAULT_BACKEND, queue_timeout: float = 120.0):
+                 backend: str = DEFAULT_BACKEND, queue_timeout: float = 120.0,
+                 serial: str = "", rescan_interval: float = 5.0):
         self.registry = registry
         self.context = context
         self.backend = backend
         self.queue_timeout = queue_timeout
+        self.serial = serial
+        self.rescan_interval = rescan_interval
+        self.trouble = ""  # last reason the phones could not be read, for /health
         self._locks: dict[str, threading.Lock] = {}
         self._guard = threading.Lock()
         self._entries: dict[str, ModelEntry] = {}
+        self._scanned = 0.0
+        self._scanning = threading.Lock()
+
+    def refresh(self, force: bool = False) -> None:
+        """Pick up a phone that was plugged in after the gateway started.
+
+        An app is usually configured before the phone is attached, so the
+        server has to keep looking rather than settle for what it found at
+        startup. Only a phone already paired with this host is connected,
+        because pairing needs the code shown on its screen.
+        """
+        now = time.monotonic()
+        if not force and now - self._scanned < self.rescan_interval:
+            return
+        # Several handler threads can arrive at once; one scan is enough, and
+        # connecting a phone twice in parallel would fight over the ADB forward.
+        if not self._scanning.acquire(blocking=False):
+            return
+        try:
+            self._refresh()
+        finally:
+            self._scanning.release()
+
+    def _refresh(self) -> None:
+        self._scanned = time.monotonic()
+        try:
+            self.registry.scan()
+        except Exception as error:  # ADB missing, or no permission to reach it.
+            self.trouble = str(error)
+            return
+        self.trouble = ""
+        paired = read_json(DATA / "pairing.json", {})
+        for device in self.registry.usable():
+            if device.state == READY or (self.serial and device.serial != self.serial):
+                continue
+            if not paired.get(device.serial):
+                self.trouble = f"{device.title} is attached but not paired with this host."
+                continue
+            try:
+                result = self.registry.connect(device.serial)
+            except Exception as error:
+                self.trouble = f"{device.title}: {error}"
+                continue
+            if isinstance(result, dict) and result.get("needs_pairing"):
+                self.registry.disconnect(device.serial)
+                self.trouble = f"{device.title} needs pairing again in the desktop app."
 
     def _lock(self, serial: str) -> threading.Lock:
         with self._guard:
@@ -94,6 +145,7 @@ class Router:
         as well while only one phone holds a file by that name. Apps that pin
         the qualified id keep working when a second phone arrives.
         """
+        self.refresh()
         found: list[ModelEntry] = []
         for device in self.registry.connected():
             client = self.registry.client(device.serial)
@@ -221,7 +273,7 @@ class Handler(BaseHTTPRequestHandler):
         because no CORS headers are ever sent.
         """
         host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
-        if host and host not in {h.strip("[]") for h in LOCAL_HOSTS}:
+        if self.gateway.local_only and host and host not in {h.strip("[]") for h in LOCAL_HOSTS}:
             self.send_error_json("JieZhi only serves local clients.", 403, "permission_error")
             return False
         key = self.gateway.api_key
@@ -253,8 +305,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = self.path.split("?")[0].rstrip("/")
         if path in ("", "/health", "/v1"):
-            return self.send_json({"service": "jiezhi", "object": "health",
-                                   "devices": [d.summary() for d in self.gateway.registry.connected()]})
+            self.gateway.router.refresh()
+            connected = [d.summary() for d in self.gateway.registry.connected()]
+            return self.send_json({"service": "jiezhi", "object": "health", "devices": connected,
+                                   "ready": bool(connected),
+                                   "trouble": self.gateway.router.trouble})
         if path == "/v1/models":
             created = int(time.time())
             return self.send_json({"object": "list",
@@ -409,12 +464,16 @@ class Gateway:
     """The endpoint an app points at, and the phones behind it."""
 
     def __init__(self, registry: DeviceRegistry, host: str = "127.0.0.1", port: int = DEFAULT_PORT,
-                 api_key: str = "", context: int = DEFAULT_CONTEXT, backend: str = DEFAULT_BACKEND):
+                 api_key: str = "", context: int = DEFAULT_CONTEXT, backend: str = DEFAULT_BACKEND,
+                 serial: str = ""):
         self.registry = registry
         self.host = host
         self.port = port
         self.api_key = api_key
-        self.router = Router(registry, context=context, backend=backend)
+        # Bound to loopback, a foreign Host header can only be an attempt to
+        # reach us from a browser; bound deliberately wider, it is the point.
+        self.local_only = host in LOCAL_HOSTS
+        self.router = Router(registry, context=context, backend=backend, serial=serial)
         self._server: Server | None = None
         self._thread: threading.Thread | None = None
 
@@ -451,7 +510,9 @@ class Gateway:
 def main(argv=None) -> int:
     """Run the endpoint on its own, for apps that only need the phone.
 
-    Pair the phone in the desktop app once; this reuses the stored token.
+    The server starts whether or not a phone is attached, so an app can be
+    pointed at it and verified first; a paired phone is picked up as soon as
+    it appears.
     """
     import argparse
 
@@ -463,41 +524,36 @@ def main(argv=None) -> int:
     parser.add_argument("--context", type=int, default=DEFAULT_CONTEXT,
                         help=f"context size used when loading a model ({CONTEXT_RANGE[0]}-{CONTEXT_RANGE[1]})")
     parser.add_argument("--backend", default=DEFAULT_BACKEND, choices=["npu", "cpu"], help="phone backend to request")
-    parser.add_argument("--serial", default="", help="connect this phone instead of the only attached one")
+    parser.add_argument("--serial", default="", help="serve only this phone")
     args = parser.parse_args(argv)
     if not CONTEXT_RANGE[0] <= args.context <= CONTEXT_RANGE[1]:
         parser.error(f"--context must be between {CONTEXT_RANGE[0]} and {CONTEXT_RANGE[1]}.")
+    if args.host not in LOCAL_HOSTS and not args.api_key:
+        parser.error("--host beyond loopback puts the phone on the network; pass --api-key as well.")
 
     registry = DeviceRegistry()
-    attached = registry.scan()
-    usable = [d for d in attached if d.supported]
-    if args.serial:
-        usable = [d for d in usable if d.serial == args.serial]
-    if not usable:
-        seen = ", ".join(f"{d.serial} ({d.state})" for d in attached) or "no phones attached"
-        print(f"No phone this host can drive. Attached: {seen}.")
-        return 1
-    if len(usable) > 1 and not args.serial:
-        print("Several phones attached; choose one with --serial:")
-        for device in usable:
-            print(f"  {device.serial}  {device.title}  {device.soc_label}")
-        return 1
-
-    device = usable[0]
-    result = registry.connect(device.serial)
-    if isinstance(result, dict) and result.get("needs_pairing"):
-        print(f"{device.title} is not paired with this host yet. Pair it in the JieZhi desktop app first.")
-        return 1
-
     gateway = Gateway(registry, host=args.host, port=args.port, api_key=args.api_key,
-                      context=args.context, backend=args.backend)
-    url = gateway.start()
+                      context=args.context, backend=args.backend, serial=args.serial)
+    try:
+        url = gateway.start()
+    except OSError as error:
+        print(f"Could not listen on {args.host}:{args.port} — {error}")
+        print("Something else may already hold that port; pick another with --port.")
+        return 1
+
+    print(f"JieZhi is serving at {url}")
+    print("Point a third-party app at that base URL.")
+    gateway.router.refresh(force=True)
     models = gateway.router.catalog()
-    print(f"JieZhi is serving {device.title} ({device.soc_label}) at {url}")
-    print("Point a third-party app at that base URL." if models else
-          "No models on the phone yet. Import one in the desktop app.")
+    connected = registry.connected()
+    if connected:
+        print(f"Connected: {', '.join(d.title for d in connected)}")
     for entry in models:
         print(f"  {entry.id}")
+    if not models:
+        print(gateway.router.trouble or
+              "No phone connected yet. Attach a paired phone and it will appear; "
+              "pair it in the desktop app first if you have not.")
     try:
         threading.Event().wait()
     except KeyboardInterrupt:
