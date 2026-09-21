@@ -2,13 +2,28 @@
 
 All notable changes to JieZhi are documented here.
 
-## 0.7.0-alpha.1 — 2026-09-21
+## 0.8.0-alpha.1 — 2026-09-21
 
 - Add in-app updates: JieZhi reads its own GitHub releases, offers the patch
   notes of a newer one, and replaces the installed bundle in place after
   verifying its published checksum, then restarts. A sliding panel asks once
   whether to check on every launch; the replaced bundle is kept until the next
   launch so the process being updated can finish reading itself out of it.
+- Move the selection chip, action menu, style chooser, results and toasts on one
+  motion budget: each rises a little as it fades in and fades out as it goes, and
+  the chooser grows into place when the Custom sliders appear. Reduced motion in
+  Settings stills all of it, and the area selector is left alone so the drag it
+  exists to start is never delayed.
+- Stop a window on its way out from taking a click. A press during a fade-out now
+  lands on whatever is behind it, and the style chooser re-arms its 250 ms press
+  guard when the sliders appear under the pointer.
+- Keep the Translate into row and the per-action model pickers from stretching
+  with the window; they use the shared row helpers the rest of the host uses.
+
+Host-side only; nothing in this release has been validated against the phone.
+
+## 0.7.0-alpha.1 — 2026-09-21
+
 - Add an OpenAI-compatible endpoint (`jiezhi-gateway`) so third-party AI workspaces
   can use the phone's NPU: model listing, streamed and whole chat completions,
   legacy completions, on-demand model loading and per-phone request queueing.
