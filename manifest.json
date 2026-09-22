@@ -1,0 +1,12 @@
+{
+  "version": "0.9.0-alpha.1",
+  "commit": "22ad3f08f9ee668c6689bd49cc67ccdaf22ff047",
+  "name": "jiezhi-client.apk",
+  "sha256": "063a72c056c743b61fb13abaa65336776c77b6e573ac5327f180d07ed12c64cf",
+  "size": 128950533,
+  "parts": [
+    {"name": "jiezhi-client.apk.000", "sha256": "471dbb506eeb05e7ead3496f6cf6aa6a2585a9cf693b24e2103b6dee4b0a193c", "size": 45000000},
+    {"name": "jiezhi-client.apk.001", "sha256": "a2e3cb3317c76d6c85839c81098a0f123ec6fd6b3206f064d2bc339b3fa79f57", "size": 45000000},
+    {"name": "jiezhi-client.apk.002", "sha256": "ff2335f49a13b1ba0fcfadb2f5960dae95b5e28ef6435a00e7099a740314699b", "size": 38950533}
+  ]
+}
