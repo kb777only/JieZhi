@@ -9,8 +9,8 @@ android {
         minSdk = 31
         targetSdk = 36
         testInstrumentationRunner = "dev.jiezhi.client.MediaInstrumentation"
-        versionCode = 8
-        versionName = "0.8.0-alpha.1"
+        versionCode = 9
+        versionName = "0.9.0-alpha.1"
         ndk { abiFilters += "arm64-v8a" }
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
