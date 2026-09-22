@@ -68,6 +68,20 @@ say 'Preparing the virtual environment'
 "$root/.venv/bin/python" -m pip install -q --upgrade pip
 "$root/.venv/bin/python" -m pip install -q -e "$root"
 
+# PySide6 carries its own Qt, but Qt's X11 support links against system
+# libraries a desktop does not necessarily have — Qt 6 needs libxcb-cursor0,
+# which Qt 5 never did, so a machine full of working Qt 5 applications can
+# still be missing it. Without this the app aborts with a message on a
+# terminal nobody is looking at, which reads as the app simply not starting.
+say 'Checking this machine can open a window'
+trouble=$("$root/.venv/bin/python" -c 'from jiezhi.preflight import report; print(report() or "", end="")')
+if [ -n "$trouble" ]; then
+    printf '\n%s\n' "$trouble" >&2
+    printf '\nThe checkout and its environment are already in place in %s,\n' "$root" >&2
+    printf 'so running this again afterwards takes a couple of seconds.\n' >&2
+    exit 1
+fi
+
 if command -v adb >/dev/null 2>&1 || [ -x "$root/.tools/platform-tools/adb" ]; then
     say 'ADB is already available'
 else

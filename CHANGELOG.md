@@ -4,6 +4,15 @@ All notable changes to JieZhi are documented here.
 
 ## Unreleased
 
+- Say why JieZhi does not start instead of not starting. Qt 6 needs
+  `libxcb-cursor0`, which Qt 5 never did, so a desktop full of working Qt 5
+  applications can still be missing it; Qt's answer was a line on stderr and
+  `abort()`, which from the application menu looks like nothing happening at
+  all. The launcher now names the missing libraries and the command that
+  installs them, writes it to `~/.local/share/jiezhi/launch.log`, and puts it
+  on screen when the desktop offers a way. `scripts/install.sh` checks the same
+  thing and stops there rather than reporting a successful install that cannot
+  open a window.
 - Publish the phone client in pieces. The QNN assets put the APK at about
   123 MB and GitHub will not hold a file over 100 MB, so the first publish run
   failed outright; it now goes up in 45 MB pieces with a checksum each, and the
