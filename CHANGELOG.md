@@ -4,6 +4,12 @@ All notable changes to JieZhi are documented here.
 
 ## Unreleased
 
+- Give the installer something to watch. Six stages fill a bar that walks
+  through blue, purple, red and pink as it goes, with a spinner on whatever is
+  running and the slow step named as slow. Piped into a file, into another
+  program, onto a dumb terminal or with `NO_COLOR` set, it prints exactly the
+  plain lines it always did: the one-liner is `curl … | sh`, so it cannot
+  assume anybody is watching.
 - Fix JieZhi not starting from the application menu while the same command
   worked in a terminal. The menu entry wrapped its command in quotes, which a
   launcher that does not unquote them runs literally; it is written unquoted
