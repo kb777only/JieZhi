@@ -13,23 +13,71 @@ if '--probe-image' in sys.argv:
     print(json.dumps(accessible_image_rect(int(sys.argv[-2]),int(sys.argv[-1]))))
     sys.exit(0)
 
-from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QIcon
-
 from jiezhi import __version__
 
 
+def complain(message: str) -> None:
+    """Say why JieZhi did not start, somewhere it will actually be read.
+
+    Started from the application menu there is no terminal, so a failure to
+    start looks like nothing happening at all. The reason goes to the log
+    every time and to the screen when the desktop offers a way to put it
+    there.
+    """
+    print(message, file=sys.stderr)
+    from datetime import datetime
+    from pathlib import Path
+    from jiezhi.client import DATA
+    try:
+        DATA.mkdir(parents=True, exist_ok=True)
+        log = Path(DATA) / "launch.log"
+        log.write_text(f"JieZhi {__version__} could not start · {datetime.now():%Y-%m-%d %H:%M}\n\n{message}\n")
+    except OSError:
+        log = None
+
+    import shutil
+    import subprocess
+    headline = message.splitlines()[0]
+    body = message if log is None else f"{message}\n\nThis is also in {log}."
+    for tool, command in (
+        ("zenity", ["zenity", "--error", "--title=JieZhi", "--no-wrap", f"--text={body}"]),
+        ("kdialog", ["kdialog", "--title", "JieZhi", "--error", body]),
+        ("notify-send", ["notify-send", "--urgency=critical", "JieZhi", headline]),
+    ):
+        if shutil.which(tool):
+            try:
+                subprocess.run(command, timeout=30, check=False)
+            except (OSError, subprocess.SubprocessError):
+                continue
+            return
+
+
 def main():
-    app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-    app.setApplicationName("JieZhi")
-    app.setApplicationVersion(__version__)
-    from jiezhi.client import asset
-    app.setWindowIcon(QIcon(str(asset("jiezhi.svg"))))
-    app.setOrganizationName("JieZhi")
-    from jiezhi.gui import Window
-    window = Window()
-    window.show()
+    from jiezhi.preflight import report
+    trouble = report()
+    if trouble:
+        complain(trouble)
+        raise SystemExit(1)
+
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtGui import QIcon
+    try:
+        app = QApplication(sys.argv)
+        app.setStyle("Fusion")
+        app.setApplicationName("JieZhi")
+        app.setApplicationVersion(__version__)
+        from jiezhi.client import asset
+        app.setWindowIcon(QIcon(str(asset("jiezhi.svg"))))
+        app.setOrganizationName("JieZhi")
+        from jiezhi.gui import Window
+        window = Window()
+        window.show()
+    except Exception:
+        # Anything at all that stops the window appearing, rather than a
+        # traceback into a terminal that is not there.
+        import traceback
+        complain("JieZhi could not start.\n\n" + traceback.format_exc())
+        raise SystemExit(1)
     sys.exit(app.exec())
 
 
