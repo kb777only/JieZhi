@@ -68,6 +68,20 @@ say 'Preparing the virtual environment'
 "$root/.venv/bin/python" -m pip install -q --upgrade pip
 "$root/.venv/bin/python" -m pip install -q -e "$root"
 
+# PySide6 carries its own Qt, but Qt's X11 support links against system
+# libraries a desktop does not necessarily have — Qt 6 needs libxcb-cursor0,
+# which Qt 5 never did, so a machine full of working Qt 5 applications can
+# still be missing it. Without this the app aborts with a message on a
+# terminal nobody is looking at, which reads as the app simply not starting.
+say 'Checking this machine can open a window'
+trouble=$("$root/.venv/bin/python" -c 'from jiezhi.preflight import report; print(report() or "", end="")')
+if [ -n "$trouble" ]; then
+    printf '\n%s\n' "$trouble" >&2
+    printf '\nThe checkout and its environment are already in place in %s,\n' "$root" >&2
+    printf 'so running this again afterwards takes a couple of seconds.\n' >&2
+    exit 1
+fi
+
 if command -v adb >/dev/null 2>&1 || [ -x "$root/.tools/platform-tools/adb" ]; then
     say 'ADB is already available'
 else
@@ -111,6 +125,25 @@ from pathlib import Path
 from jiezhi.updates import write_desktop_entry
 write_desktop_entry(Path(sys.argv[1]), Path(sys.argv[2]))
 PY
+
+if command -v desktop-file-validate >/dev/null 2>&1; then
+    desktop-file-validate "$desktop" || die "the menu entry at $desktop is not valid. That is a bug; please report it."
+fi
+
+# Everything that has gone wrong with this so far only went wrong on the
+# machine it was installed on, and a menu launch has no terminal to say so on.
+# Start it once here, the way the menu will, while somebody is still watching.
+if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+    say 'Starting JieZhi once, the way the application menu will'
+    if ! "$root/scripts/launch.sh" --self-test >/dev/null 2>&1 </dev/null; then
+        log="${XDG_DATA_HOME:-$HOME/.local/share}/jiezhi/launch.log"
+        printf '\nJieZhi is installed, but it did not start:\n\n' >&2
+        [ -f "$log" ] && sed 's/^/    /' "$log" >&2
+        printf '\nThe checkout in %s is fine, so this is JieZhi'"'"'s problem, not yours.\n' "$root" >&2
+        printf 'Please send that output along; it says exactly what stopped it.\n' >&2
+        exit 1
+    fi
+fi
 
 version=$("$root/.venv/bin/python" -c 'from jiezhi import __version__; print(__version__)')
 commit=$(git -C "$root" rev-parse --short HEAD)

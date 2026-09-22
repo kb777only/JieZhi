@@ -31,8 +31,11 @@ JieZhi to your application menu. Nothing needs an administrator password, and
 there is no release to download or checksum by hand.
 
 It needs `git` and Python 3.12 or newer, and takes a few minutes the first time,
-most of it spent fetching PySide6. Run it again whenever you like: re-running is
-an update, and it refuses to touch a checkout with uncommitted changes in it.
+most of it spent fetching PySide6. It also checks that this machine can actually
+open a Qt window before it claims to be finished — Qt 6 wants `libxcb-cursor0`,
+which most Debian-based desktops do not install on their own — and names the
+one command to fix it if not. Run it again whenever you like: re-running is an
+update, and it refuses to touch a checkout with uncommitted changes in it.
 
 To remove it, keeping your conversations and models:
 

@@ -4,6 +4,31 @@ All notable changes to JieZhi are documented here.
 
 ## Unreleased
 
+- Fix JieZhi not starting from the application menu while the same command
+  worked in a terminal. The menu entry wrapped its command in quotes, which a
+  launcher that does not unquote them runs literally; it is written unquoted
+  now, and `update-desktop-database` is run after it so a desktop stops using
+  the entry it cached from a previous install.
+- Run the menu entry through `scripts/launch.sh`, which keeps everything the
+  launch prints in `~/.local/share/jiezhi/launch.log` and puts it on screen.
+  A menu launch has no terminal, so a failed import, a missing library, a Qt
+  abort or a segfault used to leave nothing at all behind. An update restarts
+  through it too.
+- Ask Qt only for a windowing system the bundled Qt actually has. A desktop
+  names the plugin its own Qt build ships — Deepin says `dxcb` — and PySide6
+  has none of those, which is why the menu entry could fail where a terminal,
+  which sets nothing, succeeded.
+- Start JieZhi once during the install, the way the menu will, and print what
+  stopped it rather than reporting a successful install that does not run.
+- Say why JieZhi does not start instead of not starting. Qt 6 needs
+  `libxcb-cursor0`, which Qt 5 never did, so a desktop full of working Qt 5
+  applications can still be missing it; Qt's answer was a line on stderr and
+  `abort()`, which from the application menu looks like nothing happening at
+  all. The launcher now names the missing libraries and the command that
+  installs them, writes it to `~/.local/share/jiezhi/launch.log`, and puts it
+  on screen when the desktop offers a way. `scripts/install.sh` checks the same
+  thing and stops there rather than reporting a successful install that cannot
+  open a window.
 - Publish the phone client in pieces. The QNN assets put the APK at about
   123 MB and GitHub will not hold a file over 100 MB, so the first publish run
   failed outright; it now goes up in 45 MB pieces with a checksum each, and the
