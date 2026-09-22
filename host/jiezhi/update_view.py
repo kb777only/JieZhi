@@ -23,7 +23,7 @@ from .updates import REPO_PAGE, Updates, menu_launcher, restart, short
 # noticed at the edge of vision, short enough never to be waited on.
 TOAST_RISE = 28
 TOAST_SLIDE = 260
-TOAST_WIDTH = 380
+TOAST_WIDTH = 384
 TOAST_LIFE = 9000
 
 # Far enough after launch that the window has settled and the first scan is under way.
@@ -60,7 +60,7 @@ class Toast(QWidget):
         from .gui import label, button, row
 
         super().__init__(parent)
-        self.setObjectName("card")
+        self.setObjectName("toast")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFixedWidth(TOAST_WIDTH)
         self.clickable = clickable
@@ -142,7 +142,7 @@ class UpdateDialog(QDialog):
         self.update = update
         self.setWindowTitle(headline(update))
         self.setModal(False)
-        self.resize(640, 560)
+        self.resize(648, 564)
         self.setStyleSheet(parent.styleSheet())
         box = QVBoxLayout(self)
         box.setContentsMargins(XL, XL, XL, XL)

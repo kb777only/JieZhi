@@ -9,17 +9,18 @@ from .pc_tools import sensitive
 class ProjectView:
     def build_projects(self):
         from .gui import button,label,row,wide,EmptyList,card
+        from .theme import SM,LG
         self.project_store=Projects(); self.active_project=None
         layout=self.page('Room for your next idea.', 'One workspace for conversations, documents, folders and shared context.')
         split=QSplitter(Qt.Orientation.Horizontal)
-        left=QWidget();rail=QVBoxLayout(left);rail.setContentsMargins(0,0,0,0);rail.setSpacing(8)
+        left=QWidget();rail=QVBoxLayout(left);rail.setContentsMargins(0,0,0,0);rail.setSpacing(SM)
         rail.addWidget(button('＋ New project',self.create_project,True))
         self.project_list=EmptyList('No projects yet. A project keeps its own chats, folders and instructions together.')
-        self.project_list.setMinimumWidth(205);self.project_list.itemClicked.connect(self.show_project);rail.addWidget(self.project_list,1)
+        self.project_list.setMinimumWidth(204);self.project_list.itemClicked.connect(self.show_project);rail.addWidget(self.project_list,1)
         rail.addWidget(button('Open project chat',self.use_project));rail.addWidget(button('Return to personal chat',self.leave_project,kind='quiet'));split.addWidget(left)
-        right=QWidget();detail=QVBoxLayout(right);detail.setContentsMargins(0,0,0,0);detail.setSpacing(16)
+        right=QWidget();detail=QVBoxLayout(right);detail.setContentsMargins(0,0,0,0);detail.setSpacing(LG)
         self.project_title=label('Select a project to begin.','badge');detail.addWidget(self.project_title,0,Qt.AlignmentFlag.AlignLeft)
-        self.project_notes=QPlainTextEdit();self.project_notes.setPlaceholderText('What are you working toward? Add shared instructions…');self.project_notes.setMinimumHeight(96);self.project_notes.setMaximumHeight(130);detail.addWidget(self.project_notes)
+        self.project_notes=QPlainTextEdit();self.project_notes.setPlaceholderText('What are you working toward? Add shared instructions…');self.project_notes.setMinimumHeight(96);self.project_notes.setMaximumHeight(132);detail.addWidget(self.project_notes)
         detail.addLayout(row(button('Link folder…',self.link_project_folder),button('Add files…',self.project_add_files),
                              trailing=(button('Save instructions',self.save_project_notes,True),)))
         detail.addWidget(label('REFERENCE LIBRARY','section'))

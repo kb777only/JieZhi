@@ -9,13 +9,26 @@ from PySide6.QtWidgets import (QGraphicsView,QGraphicsScene,QGraphicsObject,QGra
 from .client import read_json,save_json,asset
 from .workflows import KINDS,node,validate,WorkflowRunner
 from .media import MediaClient
+from .theme import tokens
 
-COLORS={'prompt':'#8e7aed','llm':'#5d8dff','image':'#dc8cce','video':'#48b8b7','output':'#e3a35b'}
+# A node is coloured by the palette, not by a hex of its own: blue for the
+# model doing the work, purple for what is asked of it, pink and red for what
+# comes back.
+COLORS={'prompt':'violet','llm':'accent','image':'pink','video':'violet_text','output':'danger'}
+
+
+def kind_color(item,kind):
+    return QColor(tokens(getattr(item,'dark',False))[COLORS[kind]])
+
+
+def face(size,weight=QFont.Weight.Normal):
+    font=QFont('Noto Sans');font.setPixelSize(size);font.setWeight(weight);return font
 
 class Port(QGraphicsEllipseItem):
     def __init__(self,owner,output):
         super().__init__(-6,-6,12,12,owner);self.owner=owner;self.output=output
-        self.setBrush(QColor(COLORS[owner.data['kind']]));self.setPen(QPen(QColor('#eef2ff'),1.5));self.setZValue(3)
+        self.setBrush(kind_color(owner.canvas,owner.data['kind']))
+        self.setPen(QPen(QColor(tokens(owner.canvas.dark)['surface']),1.5));self.setZValue(3)
         self.setToolTip('Drag to an input to connect' if output else 'Drop a connection here')
     def mousePressEvent(self,event):
         if self.output:self.scene().canvas.begin_wire(self);event.accept()
@@ -31,17 +44,19 @@ class FlowNode(QGraphicsObject):
         self.setPos(float(data.get('x',0)),float(data.get('y',0)))
         self.input=Port(self,False) if data['kind']!='prompt' else None
         self.output=Port(self,True) if data['kind']!='output' else None
-        if self.input:self.input.setPos(0,65)
-        if self.output:self.output.setPos(235,65)
-    def boundingRect(self):return QRectF(-8,-2,251,134)
+        if self.input:self.input.setPos(0,66)
+        if self.output:self.output.setPos(240,66)
+    def boundingRect(self):return QRectF(-9,-3,258,138)
     def paint(self,painter,option,widget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing);dark=self.canvas.dark
-        painter.setBrush(QColor('#222c43' if dark else '#ffffff'));painter.setPen(QPen(QColor('#8cadff' if self.isSelected() else '#394864' if dark else '#d9e2f2'),2 if self.isSelected() else 1))
-        painter.drawRoundedRect(QRectF(0,0,235,125),15,15)
-        painter.setPen(QColor(COLORS[self.data['kind']]));painter.setFont(QFont('Noto Sans',9,QFont.Weight.Bold));painter.drawText(QRectF(17,12,202,19),KINDS[self.data['kind']].upper())
-        painter.setPen(QColor('#e3ebfb' if dark else '#27354f'));painter.setFont(QFont('Noto Sans',11,QFont.Weight.DemiBold));painter.drawText(QRectF(17,36,202,27),self.data['title'][:27])
+        t=tokens(dark)
+        painter.setBrush(QColor(t['surface']))
+        painter.setPen(QPen(QColor(t['accent'] if self.isSelected() else t['line']),2 if self.isSelected() else 1))
+        painter.drawRoundedRect(QRectF(0,0,240,126),18,18)
+        painter.setPen(kind_color(self.canvas,self.data['kind']));painter.setFont(face(12,QFont.Weight.Bold));painter.drawText(QRectF(18,12,204,18),KINDS[self.data['kind']].upper())
+        painter.setPen(QColor(t['ink']));painter.setFont(face(15,QFont.Weight.DemiBold));painter.drawText(QRectF(18,36,204,24),self.data['title'][:27])
         p=self.data['params'];hint=p.get('prompt','') if self.data['kind']=='prompt' else 'Phone · '+p.get('backend','') if self.data['kind'] in {'llm','image','video'} else 'Collect connected results'
-        painter.setFont(QFont('Noto Sans',9));painter.setPen(QColor('#a5b5ce' if dark else '#76859e'));painter.drawText(QRectF(17,68,202,20),hint.replace('\n',' ')[:32]);painter.drawText(QRectF(17,95,202,20),self.status[:32])
+        painter.setFont(face(12));painter.setPen(QColor(t['ink_3']));painter.drawText(QRectF(18,66,204,21),hint.replace('\n',' ')[:32]);painter.drawText(QRectF(18,96,204,21),self.status[:32])
     def itemChange(self,change,value):
         if change==QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             self.data['x']=value.x();self.data['y']=value.y();self.canvas.redraw_edges();self.canvas.changed()
@@ -52,15 +67,24 @@ class FlowCanvas(QGraphicsView):
         self.scene_obj=QGraphicsScene();super().__init__(self.scene_obj);self.scene_obj.canvas=self
         self.dark=False;self.changed=changed;self.nodes={};self.edges=[];self.lines=[];self.wire=None;self.wire_source=None
         self.setRenderHint(QPainter.RenderHint.Antialiasing);self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
-        self.setSceneRect(-2000,-1500,6000,4000);self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-    def set_theme(self,dark):self.dark=dark;self.setBackgroundBrush(QColor('#151c2d' if dark else '#eef2fa'));self.scene_obj.update()
+        self.setSceneRect(-2004,-1500,6000,4002);self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+    def set_theme(self,dark):
+        self.dark=dark;self.setBackgroundBrush(QColor(tokens(dark)['ground']))
+        # Ports are painted items, not stylesheet ones, so they have to be
+        # handed the new palette rather than picking it up.
+        for node in self.nodes.values():
+            for port in (node.input,node.output):
+                if port:
+                    port.setBrush(kind_color(self,node.data['kind']))
+                    port.setPen(QPen(QColor(tokens(dark)['surface']),1.5))
+        self.redraw_edges();self.scene_obj.update()
     def showEvent(self,event):
         super().showEvent(event)
         if not getattr(self,'has_fitted',False):self.has_fitted=True;QTimer.singleShot(0,self.fit)
     def drawBackground(self,painter,rect):
-        super().drawBackground(painter,rect);painter.setPen(QPen(QColor('#2b3650' if self.dark else '#d5deef'),1))
-        for x in range(math.floor(rect.left()/28)*28,int(rect.right()),28):
-            for y in range(math.floor(rect.top()/28)*28,int(rect.bottom()),28):painter.drawPoint(QPointF(x,y))
+        super().drawBackground(painter,rect);painter.setPen(QPen(QColor(tokens(self.dark)['line']),1))
+        for x in range(math.floor(rect.left()/24)*24,int(rect.right()),24):
+            for y in range(math.floor(rect.top()/24)*24,int(rect.bottom()),24):painter.drawPoint(QPointF(x,y))
     def wheelEvent(self,event):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             factor=1.15 if event.angleDelta().y()>0 else 1/1.15
@@ -93,9 +117,9 @@ class FlowCanvas(QGraphicsView):
             if a not in self.nodes or b not in self.nodes:continue
             source=self.nodes[a].output;dest=self.nodes[b].input
             if not source or not dest:continue
-            line=QGraphicsPathItem(self.curve(source.scenePos(),dest.scenePos()));line.setPen(QPen(QColor(COLORS[self.nodes[a].data['kind']]),2.4));line.setZValue(-1);line.setData(0,(a,b));line.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable,True);self.scene_obj.addItem(line);self.lines.append(line)
+            line=QGraphicsPathItem(self.curve(source.scenePos(),dest.scenePos()));line.setPen(QPen(kind_color(self,self.nodes[a].data['kind']),2.4));line.setZValue(-1);line.setData(0,(a,b));line.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable,True);self.scene_obj.addItem(line);self.lines.append(line)
     def begin_wire(self,port):
-        self.wire_source=port;self.wire=QGraphicsPathItem();self.wire.setPen(QPen(QColor('#7e9eee'),2,Qt.PenStyle.DashLine));self.scene_obj.addItem(self.wire)
+        self.wire_source=port;self.wire=QGraphicsPathItem();self.wire.setPen(QPen(QColor(tokens(self.dark)['accent']),2,Qt.PenStyle.DashLine));self.scene_obj.addItem(self.wire)
     def move_wire(self,pos):
         if self.wire:self.wire.setPath(self.curve(self.wire_source.scenePos(),pos))
     def end_wire(self,pos):
@@ -114,6 +138,7 @@ class FlowCanvas(QGraphicsView):
 class WorkflowView:
     def build_workflows(self):
         from .gui import label,button,DATA
+        from .theme import MD
         from .gui import row as controls
         self.flow_path=DATA/'workflows'/'draft.json';self.flow_cancel=threading.Event();self.flow_active=False;self.flow_media_models=[];self.flow_last_dir=None
         self.flow_timer=QTimer(self);self.flow_timer.setSingleShot(True);self.flow_timer.setInterval(450);self.flow_timer.timeout.connect(self.save_flow_draft)
@@ -122,7 +147,7 @@ class WorkflowView:
                                   *[button('＋ '+title,lambda checked=False,k=kind:self.flow_add(k))
                                     for kind,title in KINDS.items()], spacing=8))
         split=QSplitter(Qt.Orientation.Horizontal);self.flow_canvas=FlowCanvas(lambda:self.flow_timer.start());split.addWidget(self.flow_canvas)
-        inspector=QWidget();ins=QVBoxLayout(inspector);ins.setContentsMargins(14,0,0,0);inspector.setMinimumWidth(270);inspector.setMaximumWidth(320)
+        inspector=QWidget();ins=QVBoxLayout(inspector);ins.setContentsMargins(MD,0,0,0);inspector.setMinimumWidth(270);inspector.setMaximumWidth(324)
         ins.addWidget(label('NODE SETTINGS','section'));scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QScrollArea.Shape.NoFrame);self.flow_form_body=QWidget();self.flow_form=QFormLayout(self.flow_form_body);scroll.setWidget(self.flow_form_body);ins.addWidget(scroll,1)
         ins.addWidget(button('Apply parameters',self.flow_apply,True));ins.addWidget(button('Remove selected node or wire',self.flow_delete,kind='danger'));split.addWidget(inspector);split.setSizes([800,280]);layout.addWidget(split,1)
         layout.addLayout(controls(button('Fit canvas',self.flow_canvas.fit,kind='quiet'),
@@ -134,7 +159,7 @@ class WorkflowView:
         layout.addWidget(label('NPU: Absolute Reality · Neodragon video  /  CPU: SD 1.5 · Wan','fine'))
         self.flow_log=QPlainTextEdit();self.flow_log.setObjectName('console');self.flow_log.setReadOnly(True);self.flow_log.setMaximumHeight(96)
         self.flow_log.setPlaceholderText('Select a node to configure it. Ctrl+wheel to zoom · middle-drag to pan.')
-        self.flow_preview=QLabel();self.flow_preview.setFixedSize(130,96);self.flow_preview.setAlignment(Qt.AlignmentFlag.AlignCenter);self.flow_preview.hide();self.flow_output_file=None
+        self.flow_preview=QLabel();self.flow_preview.setFixedSize(132,96);self.flow_preview.setAlignment(Qt.AlignmentFlag.AlignCenter);self.flow_preview.hide();self.flow_output_file=None
         self.flow_open_result=button('Open result ↗',self.flow_open_result_file,kind='quiet');self.flow_open_result.hide()
         layout.addLayout(controls((self.flow_log,1),self.flow_preview,trailing=(self.flow_open_result,)))
         self.flow_state=label('Draft saved locally · only Run starts inference','fine',True)
@@ -165,7 +190,7 @@ class WorkflowView:
         n=self.flow_selected.data;p=n['params']
         title=QLineEdit(n['title']);self.flow_form.addRow('Name',title);self.flow_editors['title']=title
         if n['kind']!='output':
-            prompt=QPlainTextEdit(p.get('prompt',''));prompt.setMaximumHeight(110);prompt.setPlaceholderText('Use {{input}} for connected text');self.flow_form.addRow('Prompt',prompt);self.flow_editors['prompt']=prompt
+            prompt=QPlainTextEdit(p.get('prompt',''));prompt.setMaximumHeight(108);prompt.setPlaceholderText('Use {{input}} for connected text');self.flow_form.addRow('Prompt',prompt);self.flow_editors['prompt']=prompt
         if n['kind'] in {'llm','image','video'}:
             combo=QComboBox();combo.addItem('Choose phone model…','')
             models=self.current_status.get('models',[]) if n['kind']=='llm' else self.flow_media_models

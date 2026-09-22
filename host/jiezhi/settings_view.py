@@ -1,16 +1,16 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QGroupBox,QCheckBox,QComboBox,QScrollArea,QSpinBox
 from .client import save_json
-from .theme import stylesheet
+from .theme import stylesheet, LG
 
 class SettingsView:
     def build_settings(self):
         from .gui import label,button,row,wide
         layout=self.page('Make yourself at home.', 'Your appearance, connections and defaults, in one place.')
         scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        body=QWidget();col=QVBoxLayout(body);col.setContentsMargins(0,0,16,16);col.setSpacing(16)
+        body=QWidget();col=QVBoxLayout(body);col.setContentsMargins(0,0,LG,LG);col.setSpacing(LG)
         box=QGroupBox('Appearance && workspace');form=QVBoxLayout(box)
-        self.theme_choice=QComboBox();self.theme_choice.addItems(['Light','Dark']);self.theme_choice.setFixedWidth(140);self.theme_choice.setCurrentIndex(int(self.preferences.get('dark',False)))
+        self.theme_choice=QComboBox();self.theme_choice.addItems(['Light','Dark']);self.theme_choice.setFixedWidth(144);self.theme_choice.setCurrentIndex(int(self.preferences.get('dark',False)))
         form.addLayout(row(label('Color theme','muted'),self.theme_choice,spacing=12))
         self.motion_choice=QCheckBox('Fluid gradient animations');self.motion_choice.setChecked(self.preferences.get('motion',True));form.addWidget(self.motion_choice)
         self.telemetry_choice=QCheckBox('Show live phone telemetry on every page');self.telemetry_choice.setChecked(self.preferences.get('telemetry',True));form.addWidget(self.telemetry_choice)
@@ -30,7 +30,7 @@ class SettingsView:
         self.auto_connect_choice.toggled.connect(self.settings_changed);self.default_context.valueChanged.connect(self.settings_changed)
         self.settings_index=self.pages.count()-1
     def open_settings(self):
-        self.nav.blockSignals(True);self.nav.setCurrentRow(-1);self.nav.blockSignals(False);self.pages.setCurrentIndex(self.settings_index)
+        self.nav.setCurrentRow(self.settings_index)
     def settings_changed(self):
         self.preferences.update(dark=bool(self.theme_choice.currentIndex()),motion=self.motion_choice.isChecked(),telemetry=self.telemetry_choice.isChecked(),auto_connect=self.auto_connect_choice.isChecked(),context=self.default_context.value())
         save_json(self.preferences_path,self.preferences);self.context.setValue(self.preferences['context']);self.apply_appearance()

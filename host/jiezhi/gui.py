@@ -6,7 +6,7 @@ import subprocess
 import threading
 import uuid
 
-from PySide6.QtCore import Qt, QThread, Signal, QTimer
+from PySide6.QtCore import Qt, QThread, Signal, QTimer, QRect, QPropertyAnimation
 from PySide6.QtGui import QFont, QTextCursor, QShortcut, QKeySequence, QPainter, QColor
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton,
@@ -29,16 +29,21 @@ from .update_view import UpdatesView
 from .workflow_view import WorkflowView
 
 from .theme import (
-    XS, SM, MD, LG, XL, SIDEBAR, LABEL, SMALL, stylesheet, tokens,
+    XS, SM, MD, LG, XL, SIDEBAR, LABEL, SMALL, BASE, RISE, stylesheet, tokens,
 )
+from .motion import CURVE, fade_in, moving
 
 STYLE = stylesheet(False)
 
 # Destinations grouped by what they are for, over the flat page stack. The
 # second value is the stack index, so call sites keep addressing pages by index.
+# Three groups of three. The window has nine destinations and the menu shows
+# all nine, Settings included: it used to hide behind the gear alone, which is
+# how a page ends up forgotten.
 NAV_GROUPS = [
-    ("WORK", [("Chat", 0), ("Projects", 5), ("PC Assistant", 6), ("Flow canvas", 7)]),
-    ("PHONE", [("Welcome & device", 2), ("Phone models", 1), ("Discover models", 4), ("Diagnostics", 3)]),
+    ("WORK", [("Chat", 0), ("Projects", 5), ("Flow canvas", 7)]),
+    ("PHONE", [("Welcome & device", 2), ("Phone models", 1), ("Discover models", 4)]),
+    ("THIS PC", [("PC Assistant", 6), ("Runtime diagnostics", 3), ("Settings", 8)]),
 ]
 
 
@@ -71,20 +76,44 @@ class NavList(QListWidget):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.headings = []; self.page_of_row = {}; self.row_of_page = {}
+        self.marker = QWidget(self.viewport()); self.marker.setObjectName("navMarker")
+        self.marker.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.marker.hide(); self.marker_motion = None
         for title, entries in groups:
             heading = QListWidgetItem(title); heading.setFlags(Qt.ItemFlag.NoItemFlags)
             font = heading.font(); font.setPixelSize(LABEL); font.setBold(True)
-            font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1)
+            font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 3)
             heading.setFont(font); self.addItem(heading); self.headings.append(heading)
             for text, page in entries:
                 self.addItem(QListWidgetItem(text))
                 self.page_of_row[self.count() - 1] = page; self.row_of_page[page] = self.count() - 1
         super().currentRowChanged.connect(lambda row: self.pageChanged.emit(self.page_of_row.get(row, -1)))
+        super().currentRowChanged.connect(lambda _row: self.slide_marker())
 
     def fit(self):
         """Size to the rows. Called after the stylesheet lands, since padding
         from the sheet is what decides how tall a row actually is."""
-        self.setFixedHeight(sum(self.sizeHintForRow(i) + 2 for i in range(self.count())) + SM)
+        self.setFixedHeight(sum(self.sizeHintForRow(i) + SM for i in range(self.count())) + SM)
+
+    def slide_marker(self):
+        """Travel the marker to the selected row.
+
+        It is a child of the viewport rather than a stylesheet border, because
+        a border cannot move and this is the one piece of the window that says
+        where you are."""
+        row = super().currentRow()
+        if row < 0:
+            self.marker.hide(); return
+        rect = self.visualItemRect(self.item(row))
+        target = QRect(0, rect.y() + SM, 3, max(MD, rect.height() - MD))
+        resting = self.marker.isHidden() or not moving(self)
+        self.marker.setGeometry(target) if resting else None
+        if resting:
+            self.marker.show(); self.marker.raise_(); return
+        animation = QPropertyAnimation(self.marker, b"geometry", self)
+        animation.setDuration(BASE); animation.setEasingCurve(CURVE)
+        animation.setStartValue(self.marker.geometry()); animation.setEndValue(target)
+        self.marker_motion = animation; animation.start()
 
     def setCurrentRow(self, page):
         super().setCurrentRow(self.row_of_page.get(page, -1))
@@ -94,7 +123,10 @@ class NavList(QListWidget):
 
     def recolour(self, dark):
         self.fit()
-        ink = QColor(tokens(dark)["ink_3"])
+        t = tokens(dark)
+        self.marker.setStyleSheet(f'QWidget#navMarker {{ background: {t["accent"]}; border-radius: 3px; }}')
+        self.slide_marker()
+        ink = QColor(t["ink_3"])
         for heading in self.headings:
             heading.setForeground(ink)
 
@@ -185,7 +217,7 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, UpdatesView, Wor
         self.current_status = {}; self.messages = []; self.conversation_id = uuid.uuid4().hex
         self.transfer_cancel = threading.Event(); self.generating = False
         self.setWindowTitle("JieZhi · 借智 — Borrow intelligence")
-        self.resize(1440, 1000); self.setMinimumSize(1160, 840)
+        self.resize(1440, 1008); self.setMinimumSize(1152, 840)
         self.setStyleSheet(STYLE)
         root = QWidget(); self.setCentralWidget(root); layout = QHBoxLayout(root)
         layout.setContentsMargins(LG, LG, LG, SM); layout.setSpacing(XL)
@@ -193,15 +225,16 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, UpdatesView, Wor
         content = QVBoxLayout(); content.setContentsMargins(0, XS, 0, 0); content.setSpacing(LG)
         layout.addLayout(content, 1)
         self.pages = QStackedWidget(); content.addWidget(self.pages, 1)
+        self.pages.currentChanged.connect(self.page_arrived)
         self.telemetry_panel = TelemetryPanel(self.client, self); content.addWidget(self.telemetry_panel)
         self.build_chat(); self.build_models(); self.build_setup(); self.build_diagnostics(); self.build_hub(); self.build_projects(); self.build_assistant(); self.build_workflows(); self.init_updates(); self.build_settings(); self.init_desktop_popup()
         self.nav.pageChanged.connect(self.pages.setCurrentIndex); self.nav.setCurrentRow(2)
         self.refresh_history(); self.render_chat(); self.apply_appearance()
         self.statusBar().showMessage("Connect your Snapdragon 8 Elite phone to get started.")
-        self.heartbeat = QTimer(self); self.heartbeat.setInterval(20_000)
+        self.heartbeat = QTimer(self); self.heartbeat.setInterval(24_000)
         self.heartbeat.timeout.connect(self.keep_alive); self.heartbeat.start()
-        QTimer.singleShot(100, lambda: self.run_job(lambda _: self.hub.restore(), self.hub_account_result, "Restoring account…"))
-        QTimer.singleShot(1000, self.start_scan)
+        QTimer.singleShot(96, lambda: self.run_job(lambda _: self.hub.restore(), self.hub_account_result, "Restoring account…"))
+        QTimer.singleShot(996, self.start_scan)
 
     def build_sidebar(self):
         panel = QWidget(); panel.setObjectName("sidebar"); panel.setFixedWidth(SIDEBAR)
@@ -223,7 +256,7 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, UpdatesView, Wor
         self.theme_button.setAccessibleName("Toggle dark mode")
         self.settings_button = button("⚙", self.open_settings, kind="corner")
         self.settings_button.setToolTip("Settings"); self.settings_button.setAccessibleName("Open settings")
-        sidebar.addLayout(row(label("USB · Local inference", "fine"),
+        sidebar.addLayout(row(label("USB · On-device", "fine"),
                               trailing=(self.theme_button, self.settings_button)))
         return panel
 
@@ -238,10 +271,21 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, UpdatesView, Wor
             return
         worker = Worker(lambda _: self.client.status()); self.workers.add(worker)
         worker.result.connect(self.update_status)
-        worker.error.connect(lambda message: self.connection.setText("○  Connection lost · reconnect in Setup"))
+        worker.error.connect(lambda message: self.set_connection("○  Connection lost · reconnect in Setup"))
         def finish():
             self.workers.discard(worker); worker.deleteLater()
         worker.finished.connect(finish); worker.start()
+
+    def set_connection(self, text):
+        if text == self.connection.text():
+            return
+        self.connection.setText(text); fade_in(self.connection)
+
+    def page_arrived(self, index):
+        """Fade the page that just came forward, from a few pixels below."""
+        page = self.pages.widget(index)
+        if page is not None:
+            fade_in(page, rise=RISE)
 
     def page(self, title, subtitle, trailing=None):
         """Title, subtitle and one optional status chip, on a single band."""
@@ -272,7 +316,7 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, UpdatesView, Wor
         attach = button("＋ Attach files", self.attach_files, kind="quiet")
         self.composer = QPlainTextEdit(); self.composer.setObjectName("flat"); self.composer.setAcceptDrops(False)
         self.composer.setPlaceholderText("Ask a question, or attach a document to explore…")
-        self.composer.setMinimumHeight(84); self.composer.setMaximumHeight(112)
+        self.composer.setMinimumHeight(84); self.composer.setMaximumHeight(108)
         self.metrics = label("", "fine")
         self.stop_button = button("Stop", self.stop); self.stop_button.setEnabled(False)
         self.send_button = button("Send message", self.send, True)
@@ -327,7 +371,7 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, UpdatesView, Wor
         layout.addWidget(card(*steps, spacing=MD, padding=LG))
 
         self.device_picker = QComboBox(); wide(self.device_picker, 420)
-        self.device_picker.setMinimumWidth(320)
+        self.device_picker.setMinimumWidth(324)
         layout.addLayout(row(
             self.device_picker, button("Find phones", self.scan),
             trailing=(button("Install Android client", self.install_client),
@@ -430,7 +474,7 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, UpdatesView, Wor
     def disconnect_phone(self):
         if self.busy:
             self.stop(); return
-        self.client.disconnect(); self.current_status = {}; self.connection.setText("○  No phone connected")
+        self.client.disconnect(); self.current_status = {}; self.set_connection("○  No phone connected")
         self.model_badge.setText("Connect a phone and load a model."); self.models.clear()
 
     def update_status(self, status):
@@ -442,7 +486,7 @@ class Window(DesktopActionsView, ProjectChatView, SettingsView, UpdatesView, Wor
         if self.client.port and self.hub_phone.get('serial')!=self.client.serial:
             self.hub_phone={};self.hub_render()
             if self.nav.currentRow()==4:self.hub_search_timer.start()
-        self.connection.setText(f"●  {status.get('phone', 'Phone connected')}")
+        self.set_connection(f"●  {status.get('phone', 'Phone connected')}")
         self.device_details.setText(f"{status['phone']} · {status['soc']} · Android {status['android']}\n{status['state']}\n{status['free_bytes'] / 1024**3:.1f} GiB storage available · Thermal status {status['thermal_status']}")
         name = status.get("loaded_name")
         self.model_badge.setText(f"{name}  ·  {status['requested_backend'].upper()} requested" if name else "No model loaded · Open Models to choose one")

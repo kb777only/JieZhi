@@ -27,7 +27,7 @@ class DesktopActionsView:
         box=QGroupBox('Desktop selection assistant');form=QVBoxLayout(box)
         self.desktop_enabled=QCheckBox('Show JieZhi when I select text or right-click an image');self.desktop_enabled.setChecked(self.preferences.get('desktop_popup',True));form.addWidget(self.desktop_enabled)
         self.desktop_fallback=QCheckBox('Offer area selection when an app does not expose its image');self.desktop_fallback.setChecked(self.preferences.get('image_area_fallback',True));form.addWidget(self.desktop_fallback)
-        form.addWidget(label('Hover over the icon for 350 ms to see actions. Selection detection uses X11; images use accessibility when available, with area selection as a fallback. Content is sent to your phone only after you choose an action.','muted',True))
+        form.addWidget(label('Hover over the icon for 360 ms to see actions. Selection detection uses X11; images use accessibility when available, with area selection as a fallback. Content is sent to your phone only after you choose an action.','muted',True))
         self.desktop_language=QLineEdit(self.preferences.get('translation_language','English'))
         form.addLayout(row(label('Translate into','muted'),wide(self.desktop_language,240),spacing=MD))
         self.desktop_model_choices={}

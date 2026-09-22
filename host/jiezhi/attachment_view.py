@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFileDialog, QDialog, QVBoxLayout, QPlainTextEdit, QDialogButtonBox
 
 from . import attachments
+from .motion import present
 
 
 class AttachmentView:
@@ -32,10 +33,10 @@ class AttachmentView:
         self.pending_attachments = []; self.update_attachments()
 
     def preview_attachments(self):
-        dialog = QDialog(self); dialog.setWindowTitle("Attachment preview · extracted text"); dialog.resize(720, 550)
+        dialog = QDialog(self); dialog.setWindowTitle("Attachment preview · extracted text"); dialog.resize(720, 552)
         layout = QVBoxLayout(dialog); content = QPlainTextEdit(); content.setReadOnly(True)
         content.setPlainText("\n\n".join(f"━━ {f['name']} ━━\n{f['text']}" for f in self.pending_attachments)); layout.addWidget(content)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close); buttons.rejected.connect(dialog.reject); layout.addWidget(buttons); dialog.exec()
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close); buttons.rejected.connect(dialog.reject); layout.addWidget(buttons); present(dialog)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and all(u.isLocalFile() for u in event.mimeData().urls()):

@@ -74,6 +74,8 @@ def build(argv):
     from jiezhi.gui import Window
     window = Window()
     window.show()
+    from jiezhi.motion import arrive
+    arrive(window)
     return app, window
 
 
