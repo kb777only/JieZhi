@@ -60,16 +60,19 @@ class DeviceWelcome(QWidget):
         p.drawText(QRectF(left,162,column,24),Qt.AlignmentFlag.AlignLeft,self.phone)
         p.setPen(QColor(t['ink_3']));p.setFont(face(CAPTION))
         p.drawText(QRectF(left,192,column,24),Qt.AlignmentFlag.AlignLeft,self.soc+' · device illustration')
-        # Original vector device render: front and a camera-equipped back. It is
-        # centred on the widget so it cannot run past the bottom edge.
+        # Original vector device render: front and a camera-equipped back. It
+        # is centred on the widget so it cannot run past the bottom edge, and
+        # a phone is a dark object in either mode, so its chassis is drawn
+        # from the dark palette rather than from a grey of its own.
+        d = tokens(True)
         x=self.width()-252;y=max(XS,(self.height()-213)/2)+math.sin(self.phase)*3
-        p.setPen(QPen(QColor('#65708d'),1));p.setBrush(QColor('#d8dbe6'));p.drawRoundedRect(QRectF(x+99,y+9,114,204),19,19)
-        p.setBrush(QColor('#222631'));p.drawEllipse(QPointF(x+156,y+62),43,43)
+        p.setPen(QPen(QColor(t['line_strong']),3));p.setBrush(QColor(t['surface_alt']));p.drawRoundedRect(QRectF(x+99,y+9,114,204),19,19)
+        p.setBrush(QColor(d['surface']));p.drawEllipse(QPointF(x+156,y+62),43,43)
         for dx,dy in [(-17,-15),(17,-15),(-17,17),(17,17)]:
-            p.setBrush(QColor('#48536b'));p.drawEllipse(QPointF(x+156+dx,y+62+dy),12,12);p.setBrush(QColor('#11192c'));p.drawEllipse(QPointF(x+156+dx,y+62+dy),8,8)
-        p.setBrush(QColor('#161d30'));p.drawRoundedRect(QRectF(x,y,111,213),20,20)
+            p.setBrush(QColor(d['line_strong']));p.drawEllipse(QPointF(x+156+dx,y+62+dy),12,12);p.setBrush(QColor(d['ground']));p.drawEllipse(QPointF(x+156+dx,y+62+dy),9,9)
+        p.setBrush(QColor(d['ground']));p.drawRoundedRect(QRectF(x,y,111,213),20,20)
         g=QLinearGradient(x,y,x+111,y+210);g.setColorAt(0,QColor(t['accent']));g.setColorAt(.5,QColor(t['violet']));g.setColorAt(1,QColor(t['pink']))
         p.setPen(Qt.PenStyle.NoPen);p.setBrush(g);p.drawRoundedRect(QRectF(x+5,y+5,101,203),16,16)
-        p.setBrush(QColor('#192038'));p.drawEllipse(QPointF(x+55,y+13),3,3)
-        p.setPen(QColor('white'));p.setFont(face(36,QFont.Weight.Bold));p.drawText(QRectF(x+12,y+69,90,48),Qt.AlignmentFlag.AlignCenter,'借智')
+        p.setBrush(QColor(d['panel']));p.drawEllipse(QPointF(x+55,y+13),3,3)
+        p.setPen(QColor(t['on_accent']));p.setFont(face(36,QFont.Weight.Bold));p.drawText(QRectF(x+12,y+69,90,48),Qt.AlignmentFlag.AlignCenter,'借智')
         p.setFont(face(BODY));p.drawText(QRectF(x+5,y+126,101,30),Qt.AlignmentFlag.AlignCenter,'JieZhi')

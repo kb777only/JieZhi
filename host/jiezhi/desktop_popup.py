@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QApplication,QWidget,QVBoxLayout,QHBoxLayout,QLabe
 from .client import asset
 from .desktop_surface import X11Pointer,probe_image_rect
 from .desktop_styles import STYLE_DIMENSIONS,MAX_WEIGHT,preset
-from .theme import QUICK,BASE,SLOW,RISE,MD,LG
+from .theme import QUICK,BASE,SLOW,RISE,MD,LG,tokens
 
 CHIP_SIZE=QSize(36,24)
 CHIP_ICON=QSize(18,18)
@@ -92,10 +92,10 @@ class AreaSelector(QWidget):
         self.screen=QApplication.screenAt(anchor) or QApplication.primaryScreen();self.setGeometry(self.screen.geometry())
         self.snapshot=self.screen.grabWindow(0);self.start=None;self.area=QRect();self.setCursor(Qt.CursorShape.CrossCursor)
     def paintEvent(self,event):
-        p=QPainter(self);p.drawPixmap(self.rect(),self.snapshot);p.fillRect(self.rect(),QColor(9,15,30,144))
+        p=QPainter(self);p.drawPixmap(self.rect(),self.snapshot);scrim=QColor(tokens(True)['ground']);scrim.setAlpha(144);p.fillRect(self.rect(),scrim)
         if not self.area.isEmpty():
-            p.save();p.setClipRect(self.area);p.drawPixmap(self.rect(),self.snapshot);p.restore();p.setPen(QPen(QColor('#7aa0ff'),2));p.drawRect(self.area)
-        p.setPen(QColor('white'));p.drawText(24,36,'Outline the image · Esc to cancel')
+            p.save();p.setClipRect(self.area);p.drawPixmap(self.rect(),self.snapshot);p.restore();p.setPen(QPen(QColor(tokens(True)['accent']),2));p.drawRect(self.area)
+        p.setPen(QColor(tokens(True)['ink']));p.drawText(24,36,'Outline the image · Esc to cancel')
     def mousePressEvent(self,event):
         if event.button()==Qt.MouseButton.LeftButton:self.start=event.position().toPoint()
         else:self.close()

@@ -38,10 +38,11 @@ class MetricCard(QWidget):
     def __init__(self,title,color,unit='',ceiling=None):
         super().__init__();self.unit=unit;self.setObjectName('telemetryCard');self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground,True)
         col=QVBoxLayout(self);col.setContentsMargins(SM,SM,SM,SM);col.setSpacing(3)
-        self.title=QLabel(title);self.title.setStyleSheet(f'font-size:{LABEL}px;color:#6d7b92;background:transparent;');col.addWidget(self.title)
+        faint=tokens(False)['ink_3']
+        self.title=QLabel(title);self.title.setStyleSheet(f'font-size:{LABEL}px;color:{faint};background:transparent;');col.addWidget(self.title)
         self.value=QLabel('—');self.value.setStyleSheet(f'font-size:{HEADING}px;font-weight:600;color:{color};background:transparent;');col.addWidget(self.value)
         self.chart=Sparkline(color,ceiling);col.addWidget(self.chart)
-        self.note=QLabel('Disconnected');self.note.setStyleSheet(f'font-size:{LABEL}px;color:#8591a7;background:transparent;');col.addWidget(self.note)
+        self.note=QLabel('Disconnected');self.note.setStyleSheet(f'font-size:{LABEL}px;color:{faint};background:transparent;');col.addWidget(self.note)
     def recolour(self,color):
         self.value.setStyleSheet(f'font-size:{HEADING}px;font-weight:600;color:{color};background:transparent;')
         self.chart.color=QColor(color);self.chart.update()
