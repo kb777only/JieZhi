@@ -1,13 +1,15 @@
 import hashlib
 import json
 import subprocess
+from pathlib import Path
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 import pytest
 
-from jiezhi.updates import Updates, fetch_client, notes_for, write_desktop_entry
+from jiezhi.updates import (Updates, desktop_exec, fetch_client, notes_for,
+                            write_desktop_entry)
 
 REPO = "kb777only/JieZhi"
 
@@ -128,7 +130,7 @@ def test_update_fast_forwards_the_checkout(installation):
     assert (root / "README.md").read_text() == "two\n"
     assert seen[-1].startswith("Updated")
     # The menu entry is rewritten to point at this checkout's launcher.
-    assert str(root / ".venv/bin/jiezhi") in (updates.desktop_file).read_text()
+    assert str(root / "scripts/launch.sh") in (updates.desktop_file).read_text()
     assert updates.check() is None
 
 
@@ -202,8 +204,26 @@ def test_notes_are_capped_so_the_box_stays_a_summary():
 def test_desktop_entry_points_at_the_checkout(tmp_path):
     entry = write_desktop_entry(tmp_path / "opt/jiezhi", tmp_path / "apps/jiezhi.desktop")
     text = entry.read_text()
-    assert f'Exec="{tmp_path}/opt/jiezhi/.venv/bin/jiezhi"' in text
+    # Through the wrapper, so a launch that dies leaves something to read.
+    assert f"Exec={tmp_path}/opt/jiezhi/scripts/launch.sh" in text
     assert f"Icon={tmp_path}/opt/jiezhi/assets/jiezhi.svg" in text
+
+
+def test_an_ordinary_path_is_not_quoted(tmp_path):
+    # The whole Exec value used to be wrapped in quotes. A launcher that does
+    # not unquote it looks for a program whose name starts with a quotation
+    # mark, and clicking JieZhi in the menu does nothing at all.
+    assert desktop_exec(Path("/home/user/.local/opt/jiezhi/scripts/launch.sh")) == \
+        "/home/user/.local/opt/jiezhi/scripts/launch.sh"
+
+
+def test_a_path_that_needs_quoting_gets_it(tmp_path):
+    assert desktop_exec(Path("/home/a user/jiezhi/scripts/launch.sh")) == \
+        '"/home/a user/jiezhi/scripts/launch.sh"'
+    # Backslash, quote, backtick and dollar survive being unescaped twice: once
+    # by the desktop file parser and once by the launcher.
+    assert desktop_exec(Path('/home/$HOME "x"/launch.sh')) == \
+        '"/home/\\\\$HOME \\\\"x\\\\"/launch.sh"'
 
 
 @pytest.fixture
@@ -367,7 +387,9 @@ def test_saying_yes_offers_the_new_commits_and_takes_them(qtbot, tmp_path, monke
     w.update_dialog.begin()
     qtbot.waitUntil(lambda: w.restarting, timeout=20000)
     assert git(root, "rev-parse", "HEAD") == head
-    assert started == [root / ".venv/bin/jiezhi"]
+    # Restarted through the wrapper, so an update that breaks the app leaves
+    # a reason behind instead of just not coming back.
+    assert started == [root / "scripts/launch.sh"]
     qtbot.waitUntil(lambda: not w.workers, timeout=5000)
     w.close()
 

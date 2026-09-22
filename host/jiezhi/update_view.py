@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 from . import __version__
 from .client import save_json
 from .theme import SM, MD, LG, XL
-from .updates import REPO_PAGE, Updates, launcher, restart, short
+from .updates import REPO_PAGE, Updates, menu_launcher, restart, short
 
 # The toast rises this far as it fades in, over this long. Slow enough to be
 # noticed at the edge of vision, short enough never to be waited on.
@@ -422,5 +422,5 @@ class UpdatesView:
         self.statusBar().showMessage("Updated. Restarting JieZhi…")
         if self.update_dialog is not None:
             self.update_dialog.advance(100, "Updated. Restarting JieZhi…")
-        restart(launcher(root))
+        restart(menu_launcher(root))
         QTimer.singleShot(400, self.close)
