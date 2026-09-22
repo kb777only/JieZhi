@@ -126,6 +126,25 @@ from jiezhi.updates import write_desktop_entry
 write_desktop_entry(Path(sys.argv[1]), Path(sys.argv[2]))
 PY
 
+if command -v desktop-file-validate >/dev/null 2>&1; then
+    desktop-file-validate "$desktop" || die "the menu entry at $desktop is not valid. That is a bug; please report it."
+fi
+
+# Everything that has gone wrong with this so far only went wrong on the
+# machine it was installed on, and a menu launch has no terminal to say so on.
+# Start it once here, the way the menu will, while somebody is still watching.
+if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+    say 'Starting JieZhi once, the way the application menu will'
+    if ! "$root/scripts/launch.sh" --self-test >/dev/null 2>&1 </dev/null; then
+        log="${XDG_DATA_HOME:-$HOME/.local/share}/jiezhi/launch.log"
+        printf '\nJieZhi is installed, but it did not start:\n\n' >&2
+        [ -f "$log" ] && sed 's/^/    /' "$log" >&2
+        printf '\nThe checkout in %s is fine, so this is JieZhi'"'"'s problem, not yours.\n' "$root" >&2
+        printf 'Please send that output along; it says exactly what stopped it.\n' >&2
+        exit 1
+    fi
+fi
+
 version=$("$root/.venv/bin/python" -c 'from jiezhi import __version__; print(__version__)')
 commit=$(git -C "$root" rev-parse --short HEAD)
 say "JieZhi $version ($commit) is installed in $root"

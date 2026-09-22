@@ -77,23 +77,71 @@ def short(sha: str) -> str:
     return str(sha)[:7]
 
 
+NEEDS_QUOTING = set(' \t\n"\'\\><~|&;$*?#()`')
+
+
+def desktop_exec(command: Path) -> str:
+    """An Exec value a launcher will actually run.
+
+    This used to wrap the whole command in quotes. The specification allows a
+    quoted argument, but a launcher that does not unquote it goes looking for a
+    program whose name starts with a quotation mark, and from the application
+    menu that reads as clicking JieZhi and nothing happening at all. So quote
+    only a path that genuinely needs it, and leave an ordinary one alone.
+    """
+    text = str(command)
+    if not set(text) & NEEDS_QUOTING:
+        return text
+    # Inside a quoted argument the file's own backslash escaping applies first,
+    # so each of these has to survive being unescaped twice.
+    escaped = text.replace("\\", "\\\\\\\\")
+    for character in '"`$':
+        escaped = escaped.replace(character, "\\\\" + character)
+    return f'"{escaped}"'
+
+
+def refresh_menu(directory: Path) -> None:
+    """Tell the desktop that its menu changed.
+
+    Without this a launcher can go on using what it cached, which after an
+    uninstall is an entry pointing at a program that is no longer there.
+    """
+    tool = shutil.which("update-desktop-database")
+    if not tool:
+        return
+    try:
+        subprocess.run([tool, str(directory)], timeout=60, check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def write_desktop_entry(root: Path, desktop_file: Path = DESKTOP_FILE) -> Path:
     """Point the application menu at a checkout's launcher."""
     root = Path(root); desktop_file = Path(desktop_file)
     desktop_file.parent.mkdir(parents=True, exist_ok=True)
-    executable = str(launcher(root)).replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`").replace("$", "\\$")
     desktop_file.write_text(
         "[Desktop Entry]\nType=Application\nName=JieZhi 借智\n"
         "Comment=Borrow intelligence from your Android phone\n"
-        f'Exec="{executable}"\nIcon={root}/assets/jiezhi.svg\n'
-        "Terminal=false\nCategories=Utility;\n")
+        f"Exec={desktop_exec(menu_launcher(root))}\nIcon={root}/assets/jiezhi.svg\n"
+        "Terminal=false\nStartupNotify=true\nCategories=Utility;\n")
     desktop_file.chmod(0o644)
+    refresh_menu(desktop_file.parent)
     return desktop_file
 
 
 def launcher(root: Path) -> Path:
     """The console script `pip install -e .` puts in the checkout's environment."""
     return Path(root) / ".venv/bin/jiezhi"
+
+
+def menu_launcher(root: Path) -> Path:
+    """What the menu entry runs: the console script, with its output kept.
+
+    A menu launch has no terminal, so without this anything that stops JieZhi
+    before it opens a window leaves nothing behind to read.
+    """
+    return Path(root) / "scripts/launch.sh"
 
 
 def restart(executable) -> None:

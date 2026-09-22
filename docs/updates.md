@@ -87,6 +87,25 @@ work, so it will not run at all when:
 
 `scripts/install.sh` follows the same rule when re-run, for the same reason.
 
+## When it does not start
+
+An app started from the application menu has no terminal, so anything that
+stops it before a window appears leaves nothing on screen and nothing to read.
+The menu entry therefore runs `scripts/launch.sh` rather than the console
+script directly. From a terminal it gets out of the way; started from a menu it
+keeps everything the launch prints in `~/.local/share/jiezhi/launch.log` and
+puts the last of it on screen through zenity, kdialog or notify-send. A failed
+import, a missing system library, a Qt abort and a segfault all land there.
+
+`scripts/install.sh` starts JieZhi the same way before it says it is finished,
+and prints that log instead of claiming an install that does not run.
+
+Two things it also gets right about the entry itself, both of which looked like
+clicking JieZhi and nothing happening: the command is not wrapped in quotes,
+which a launcher that does not unquote them would run literally, and
+`update-desktop-database` is run afterwards so the desktop stops using whatever
+it cached from an earlier install.
+
 ## The phone client
 
 An update replaces the PC app only. The phone keeps the client it has until it
