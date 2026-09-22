@@ -142,7 +142,7 @@ class UpdateDialog(QDialog):
         self.update = update
         self.setWindowTitle(headline(update))
         self.setModal(False)
-        self.resize(640, 560)
+        self.resize(648, 564)
         self.setStyleSheet(parent.styleSheet())
         box = QVBoxLayout(self)
         box.setContentsMargins(XL, XL, XL, XL)

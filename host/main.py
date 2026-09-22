@@ -30,6 +30,8 @@ def main():
     from jiezhi.gui import Window
     window = Window()
     window.show()
+    from jiezhi.motion import arrive
+    arrive(window)
     sys.exit(app.exec())
 
 

@@ -23,7 +23,7 @@ class X11Pointer:
         ok=self.lib.XQueryPointer(self.display,self.root,C.byref(root),C.byref(child),C.byref(x),C.byref(y),C.byref(wx),C.byref(wy),C.byref(mask))
         return (x.value,y.value,mask.value) if ok else None
     def dismiss_context_menu(self):
-        # Called only after the user deliberately hovers our icon for 350 ms.
+        # Called only after the user deliberately hovers our icon for 360 ms.
         xtst=C.CDLL(ctypes.util.find_library('Xtst'))
         self.lib.XKeysymToKeycode.argtypes=[C.c_void_p,C.c_ulong];self.lib.XKeysymToKeycode.restype=C.c_uint
         xtst.XTestFakeKeyEvent.argtypes=[C.c_void_p,C.c_uint,C.c_int,C.c_ulong]

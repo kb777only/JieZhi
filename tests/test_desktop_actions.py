@@ -11,7 +11,7 @@ def window(qtbot,tmp_path,monkeypatch):
     w=Window();qtbot.addWidget(w);w.show();qtbot.wait(250);return w
 
 
-def test_hover_waits_350ms_and_exposes_context_actions(qtbot,tmp_path,monkeypatch):
+def test_hover_waits_360ms_and_exposes_context_actions(qtbot,tmp_path,monkeypatch):
     w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
     class Pointer:
         def state(self):return (10,10,0)
@@ -19,7 +19,7 @@ def test_hover_waits_350ms_and_exposes_context_actions(qtbot,tmp_path,monkeypatc
     p.pointer=Pointer();clock=[100.0];monkeypatch.setattr(popup.time,'monotonic',lambda:clock[0])
     p.offer({'kind':'text','text':'Selected passage'},QPoint(400,200))
     monkeypatch.setattr(popup.QCursor,'pos',lambda:p.chip.geometry().center())
-    p.poll();clock[0]+=.349;p.poll();assert not p.menu.isVisible()
+    p.poll();clock[0]+=.359;p.poll();assert not p.menu.isVisible()
     clock[0]+=.002;p.poll();assert p.menu.isVisible()
     assert p.menu.findChildren(popup.QPushButton)[0].text()=='Summarize'
     w.close()
@@ -97,7 +97,7 @@ def test_detected_image_rect_is_converted_from_device_pixels(qtbot,tmp_path,monk
 
 def test_chip_is_compact_and_fades_in(qtbot,tmp_path,monkeypatch):
     w=window(qtbot,tmp_path,monkeypatch);p=w.desktop_popup
-    assert p.chip.width()>p.chip.height() and p.chip.width()<46
+    assert p.chip.width()>p.chip.height() and p.chip.width()<42
     p.offer({'kind':'text','text':'Selected passage'},QPoint(400,200))
     assert p.chip.windowOpacity()<1 and p.chip_motion.fade.state()==popup.QPropertyAnimation.State.Running
     qtbot.waitUntil(lambda:p.chip_motion.fade.state()==popup.QPropertyAnimation.State.Stopped)

@@ -7,22 +7,23 @@ from PySide6.QtWidgets import QApplication,QWidget,QVBoxLayout,QHBoxLayout,QLabe
 from .client import asset
 from .desktop_surface import X11Pointer,probe_image_rect
 from .desktop_styles import STYLE_DIMENSIONS,MAX_WEIGHT,preset
+from .theme import QUICK,BASE,SLOW,RISE,MD,LG
 
-CHIP_SIZE=QSize(40,26)
+CHIP_SIZE=QSize(36,24)
 CHIP_ICON=QSize(18,18)
-CHIP_STYLE='QPushButton#chip {padding:0;border-radius:8px;}'
-CHIP_FADE=140
+CHIP_STYLE='QPushButton#chip {padding:0;min-width:0;min-height:0;border-radius:12px;}'
+CHIP_FADE=BASE
 CLICK_SLACK=6
-MENU_SLACK=40
-STYLE_ARM=.250
+MENU_SLACK=36
+STYLE_ARM=.240
 
 # Motion. Everything here opens under the pointer while the user is mid-gesture,
 # so the budget is small: past about 150 ms a fade stops reading as polish and
-# starts reading as the app being slow to answer.
-ENTER=140
-LEAVE=110
-RISE=10
-GROW=150
+# starts reading as the app being slow to answer. The durations come from the
+# window's own scale, so the chip and the window move in the same language.
+ENTER=BASE
+LEAVE=QUICK
+GROW=BASE
 
 TEXT_ACTIONS={'summarize':'Summarize','rewrite':'Rewrite','continue':'Continue writing','explain':'Explain','translate':'Translate','generate':'Generate as an image'}
 IMAGE_ACTIONS={'rework':'Rework image','upscale':'Upscale 2×','expand':'Expand image','variations':'Create a variation'}
@@ -91,10 +92,10 @@ class AreaSelector(QWidget):
         self.screen=QApplication.screenAt(anchor) or QApplication.primaryScreen();self.setGeometry(self.screen.geometry())
         self.snapshot=self.screen.grabWindow(0);self.start=None;self.area=QRect();self.setCursor(Qt.CursorShape.CrossCursor)
     def paintEvent(self,event):
-        p=QPainter(self);p.drawPixmap(self.rect(),self.snapshot);p.fillRect(self.rect(),QColor(8,15,30,140))
+        p=QPainter(self);p.drawPixmap(self.rect(),self.snapshot);p.fillRect(self.rect(),QColor(9,15,30,144))
         if not self.area.isEmpty():
             p.save();p.setClipRect(self.area);p.drawPixmap(self.rect(),self.snapshot);p.restore();p.setPen(QPen(QColor('#7aa0ff'),2));p.drawRect(self.area)
-        p.setPen(QColor('white'));p.drawText(24,32,'Outline the image · Esc to cancel')
+        p.setPen(QColor('white'));p.drawText(24,36,'Outline the image · Esc to cancel')
     def mousePressEvent(self,event):
         if event.button()==Qt.MouseButton.LeftButton:self.start=event.position().toPoint()
         else:self.close()
@@ -116,7 +117,7 @@ class StylePanel(QWidget):
     closed=Signal()
     def __init__(self,weights,spot,moving=True):
         super().__init__();floating(self);self.setFixedWidth(300);self.armed=0.0;self.moving=moving
-        box=QVBoxLayout(self);box.setContentsMargins(14,14,14,14);box.addWidget(QLabel('Rewrite as'))
+        box=QVBoxLayout(self);box.setContentsMargins(MD,MD,MD,MD);box.addWidget(QLabel('Rewrite as'))
         self.presets=[]
         for key,label,_ in STYLE_DIMENSIONS:
             b=QPushButton(label);b.clicked.connect(lambda checked=False,k=key:self.pick(preset(k)));box.addWidget(b);self.presets.append(b)
@@ -168,9 +169,9 @@ class ResultPopup(QWidget):
     stop_requested=Signal()
     closed=Signal()
     def __init__(self,title,anchor,parent=None,moving=True):
-        super().__init__(parent);floating(self);self.resize(500,410);self.path=None;self.drag=None;self.moving=moving
+        super().__init__(parent);floating(self);self.resize(504,408);self.path=None;self.drag=None;self.moving=moving
         box=QVBoxLayout(self);box.setContentsMargins(18,18,18,18)
-        row=QHBoxLayout();self.title=QLabel(title);row.addWidget(self.title,1);close=QPushButton('×');close.setFixedWidth(35);close.clicked.connect(self.dismiss);row.addWidget(close);box.addLayout(row)
+        row=QHBoxLayout();self.title=QLabel(title);row.addWidget(self.title,1);close=QPushButton('×');close.setFixedWidth(36);close.clicked.connect(self.dismiss);row.addWidget(close);box.addLayout(row)
         self.status=QLabel('Preparing…');self.status.setWordWrap(True);box.addWidget(self.status)
         self.text=QTextBrowser();self.text.setOpenExternalLinks(False);box.addWidget(self.text,1)
         self.picture=QLabel();self.picture.setAlignment(Qt.AlignmentFlag.AlignCenter);self.picture.hide();box.addWidget(self.picture,1)
@@ -182,7 +183,7 @@ class ResultPopup(QWidget):
         # A result the user waved away fades; a result torn down with the app does not.
         self.motion.leave(self.moving,self.close)
     def show_image(self,path):
-        self.path=Path(path);self.text.hide();self.picture.show();self.picture.setPixmap(QPixmap(str(path)).scaled(QSize(455,285),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation));self.copy.setEnabled(True);self.save.setEnabled(True)
+        self.path=Path(path);self.text.hide();self.picture.show();self.picture.setPixmap(QPixmap(str(path)).scaled(QSize(456,288),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation));self.copy.setEnabled(True);self.save.setEnabled(True)
     def copy_result(self):
         if self.path:QApplication.clipboard().setPixmap(QPixmap(str(self.path)))
         else:QApplication.clipboard().setText(self.text.toPlainText())
@@ -211,14 +212,14 @@ class ResultPopup(QWidget):
 class DesktopPopup:
     def __init__(self,host):
         self.host=host;self.pointer=None;self.previous_mask=0;self.hover_since=None;self.context=None;self.anchor=QPoint();self.last_text='';self.expires=0;self.probing=False;self.menu_left=None;self.style_panel=None
-        self.chip=QPushButton();self.chip.setObjectName('chip');floating(self.chip,True);self.chip.setFixedSize(CHIP_SIZE);self.chip.setIcon(QIcon(str(asset('jiezhi.svg'))));self.chip.setIconSize(CHIP_ICON);self.chip.setToolTip('Hover for 350 ms for JieZhi actions');self.chip.clicked.connect(self.expand)
+        self.chip=QPushButton();self.chip.setObjectName('chip');floating(self.chip,True);self.chip.setFixedSize(CHIP_SIZE);self.chip.setIcon(QIcon(str(asset('jiezhi.svg'))));self.chip.setIconSize(CHIP_ICON);self.chip.setToolTip('Hover for 360 ms for JieZhi actions');self.chip.clicked.connect(self.expand)
         self.chip_motion=Motion(self.chip,host)
         self.menu=QWidget();floating(self.menu);self.menu.setFixedWidth(240);self.menu_box=QVBoxLayout(self.menu);self.menu_box.setContentsMargins(12,12,12,12)
-        self.toast=QLabel();floating(self.toast,True);self.toast.setMargin(14);self.toast.setWordWrap(True);self.toast.setMaximumWidth(460)
+        self.toast=QLabel();floating(self.toast,True);self.toast.setMargin(MD);self.toast.setWordWrap(True);self.toast.setMaximumWidth(456)
         self.menu_motion=Motion(self.menu,host);self.toast_motion=Motion(self.toast,host)
         self.toast_timer=QTimer(host);self.toast_timer.setSingleShot(True);self.toast_timer.timeout.connect(lambda:self.toast_motion.leave(self.moving))
-        self.settle=QTimer(host);self.settle.setSingleShot(True);self.settle.setInterval(180);self.settle.timeout.connect(self.selection_ready)
-        self.timer=QTimer(host);self.timer.setInterval(40);self.timer.timeout.connect(self.poll)
+        self.settle=QTimer(host);self.settle.setSingleShot(True);self.settle.setInterval(SLOW);self.settle.timeout.connect(self.selection_ready)
+        self.timer=QTimer(host);self.timer.setInterval(36);self.timer.timeout.connect(self.poll)
         QApplication.clipboard().selectionChanged.connect(self.selection_changed)
         self.configure()
     def configure(self):
@@ -237,7 +238,7 @@ class DesktopPopup:
     def owns(self,window,cursor,pad=CLICK_SLACK):
         """Is the pointer on this window of ours? Qt is asked first, then the geometry
         with a little slack: a press is seen up to one poll late, and by then the pointer
-        can have drifted off a 40x26 chip. Dismissing on that sample swallowed the click."""
+        can have drifted off a 36x24 chip. Dismissing on that sample swallowed the click."""
         widget=QApplication.widgetAt(cursor)
         if widget is not None and widget.window() is window:return True
         return near(window,cursor,pad)
@@ -288,7 +289,7 @@ class DesktopPopup:
         if self.chip.isVisible() and not self.chip_motion.busy() and not self.menu.isVisible():
             if near(self.chip,cursor,CLICK_SLACK):
                 if self.hover_since is None:self.hover_since=time.monotonic()
-                elif time.monotonic()-self.hover_since>=.350:self.expand()
+                elif time.monotonic()-self.hover_since>=.360:self.expand()
             else:self.hover_since=None
             if time.monotonic()>self.expires:self.hide()
     def right_click(self,anchor,physical):
@@ -317,10 +318,10 @@ class DesktopPopup:
         # Not connect(self.hide): Qt would pass the button's checked state as `moving`
         # and dismiss the menu instantly instead of fading it.
         close=QPushButton('Dismiss');close.clicked.connect(lambda:self.hide());self.menu_box.addWidget(close)
-        self.menu_left=None;self.menu.adjustSize();place(self.menu,self.chip.pos()+QPoint(30,-18))
+        self.menu_left=None;self.menu.adjustSize();place(self.menu,self.chip.pos()+QPoint(30,-LG))
         self.menu_motion.enter(self.moving);self.menu.raise_()
     def activate(self,action):
-        if self.host.busy:self.notify('JieZhi is busy · finish or stop the current task first',self.anchor,2500);return
+        if self.host.busy:self.notify('JieZhi is busy · finish or stop the current task first',self.anchor,2400);return
         context=dict(self.context);anchor=QPoint(self.anchor);spot=QCursor.pos();self.hide()
         if context['kind']=='text':
             if action=='rewrite':self.choose_style(context,anchor,spot)
@@ -336,8 +337,8 @@ class DesktopPopup:
                 image=screen.grabWindow(0,*area).toImage()
                 if not image.isNull():selected(image)
                 else:self.select_area(anchor,selected)
-            QTimer.singleShot(150,capture)
-        else:QTimer.singleShot(150,lambda:self.select_area(anchor,selected))
+            QTimer.singleShot(BASE,capture)
+        else:QTimer.singleShot(BASE,lambda:self.select_area(anchor,selected))
     def choose_style(self,context,anchor,spot=None):
         """Rewrite always asks for a style first. The chooser opens where the menu was,
         so it is where the pointer already is rather than back at the selection."""
@@ -360,7 +361,7 @@ class DesktopPopup:
     def select_area(self,anchor,done):
         self.selector=AreaSelector(anchor);self.selector.selected.connect(done);self.selector.show();self.selector.activateWindow()
     def notify(self,text,anchor,timeout=0):
-        self.toast_timer.stop();self.toast.setText(text);self.toast.adjustSize();place(self.toast,anchor+QPoint(0,-75))
+        self.toast_timer.stop();self.toast.setText(text);self.toast.adjustSize();place(self.toast,anchor+QPoint(0,-72))
         if not self.toast.isVisible() or self.toast_motion.busy():self.toast_motion.enter(self.moving)
         self.toast.raise_()
         if timeout:self.toast_timer.start(timeout)

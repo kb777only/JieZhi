@@ -8,26 +8,26 @@ from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QCheckBox, QListWidget, QL
 from .hub import Hub, Paused
 from .recommendations import CATEGORIES, phone_profile, ranked
 from .client import DATA, read_json
-from .theme import tokens
+from .theme import tokens,SMALL,CAPTION
 
 
 class ModelResultDelegate(QStyledItemDelegate):
-    def sizeHint(self,option,index):return QSize(240,100)
+    def sizeHint(self,option,index):return QSize(240,96)
     def paint(self,painter,option,index):
         opt=QStyleOptionViewItem(option);self.initStyleOption(opt,index)
         name=opt.text;opt.text='';opt.widget.style().drawControl(QStyle.ControlElement.CE_ItemViewItem,opt,painter,opt.widget)
-        painter.save();rect=option.rect.adjusted(10,5,-10,-5)
+        painter.save();rect=option.rect.adjusted(12,6,-12,-6)
         selected=bool(option.state & QStyle.StateFlag.State_Selected)
-        font=option.font;font.setPointSizeF(10.5);font.setBold(True);painter.setFont(font)
+        font=option.font;font.setPixelSize(SMALL);font.setBold(True);painter.setFont(font)
         dark=getattr(option.widget.window(),'dark',False)
         t=tokens(dark)
         painter.setPen(QColor(t['accent_text'] if selected else t['ink']))
-        painter.drawText(QRect(rect.x(),rect.y(),rect.width(),22),Qt.AlignmentFlag.AlignVCenter,QFontMetrics(font).elidedText(name,Qt.TextElideMode.ElideRight,rect.width()))
-        font.setBold(False);font.setPointSizeF(9);painter.setFont(font)
+        painter.drawText(QRect(rect.x(),rect.y(),rect.width(),24),Qt.AlignmentFlag.AlignVCenter,QFontMetrics(font).elidedText(name,Qt.TextElideMode.ElideRight,rect.width()))
+        font.setBold(False);font.setPixelSize(CAPTION);painter.setFont(font)
         data=index.data(Qt.ItemDataRole.UserRole+1) or {}
         for i,line in enumerate(data.get('lines',[])):
             painter.setPen(QColor(t['accent_text'] if i==0 and data.get('recommended') else t['ink_3']))
-            painter.drawText(QRect(rect.x(),rect.y()+24+i*19,rect.width(),19),Qt.AlignmentFlag.AlignVCenter,QFontMetrics(font).elidedText(line,Qt.TextElideMode.ElideRight,rect.width()))
+            painter.drawText(QRect(rect.x(),rect.y()+24+i*18,rect.width(),18),Qt.AlignmentFlag.AlignVCenter,QFontMetrics(font).elidedText(line,Qt.TextElideMode.ElideRight,rect.width()))
         painter.restore()
 
 
@@ -51,12 +51,12 @@ class HubView:
             button("Get a read token ↗", lambda: QDesktopServices.openUrl(QUrl("https://huggingface.co/settings/tokens")), kind='quiet'),)));self.hub_account_panel.hide()
         self.hub_query = QLineEdit(); self.hub_query.setPlaceholderText("Search GGUF models, or enter owner/repository")
         self.hub_query.returnPressed.connect(self.hub_search)
-        wide(self.hub_query, 460); self.hub_query.setMinimumWidth(460)
+        wide(self.hub_query, 456); self.hub_query.setMinimumWidth(456)
         layout.addLayout(row(self.hub_query, button("Search", self.hub_search, True),
                              button("Open repository", self.hub_open_repo)))
         self.hub_category=QComboBox()
         for key,title in CATEGORIES.items():self.hub_category.addItem(title,key)
-        wide(self.hub_category, 230); self.hub_category.setMinimumWidth(190)
+        wide(self.hub_category, 228); self.hub_category.setMinimumWidth(180)
         self.hub_context=QComboBox()
         for size in [2048,4096,8192]:self.hub_context.addItem(f'{size//1024}K',size)
         self.hub_context.setCurrentIndex(1); wide(self.hub_context, 90)

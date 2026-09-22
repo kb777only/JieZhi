@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QHBoxLayout, QComboBox, QCheckBox, QPlainTextEdit,
 from .assistant import Assistant
 from .pc_tools import Tools, Policy, MODES, Cancelled, sensitive
 from .client import DATA, read_json, save_json
+from .motion import RISE, fade_in
 
 
 class AssistantWorker(QThread):
@@ -50,7 +51,7 @@ class AssistantView:
         self.access_mode=QComboBox()
         for key,title in MODES.items():self.access_mode.addItem(title,key)
         self.access_mode.setCurrentIndex(max(0,self.access_mode.findData(settings.get('mode','confirm'))))
-        wide(self.access_mode,240);self.access_mode.setMinimumWidth(200)
+        wide(self.access_mode,240);self.access_mode.setMinimumWidth(204)
         self.allow_admin=QCheckBox('Allow administrator requests');self.allow_admin.setChecked(False)
         self.pc_mode_note=label('','fine',True)
         self.pc_roots=EmptyList('No folders allowed yet. The assistant can only read and edit inside folders you add here.')
@@ -137,7 +138,7 @@ class AssistantView:
     def pc_approval(self,response):
         if not self.pc_worker or self.pc_worker.cancelled.is_set():response['event'].set();return
         self.pending_approval=response;proposal=response['proposal']
-        dialog=QDialog(self);self.approval_dialog=dialog;dialog.setWindowTitle('Review Assistant action');dialog.resize(850,600)
+        dialog=QDialog(self);self.approval_dialog=dialog;dialog.setWindowTitle('Review Assistant action');dialog.resize(864,600)
         layout=QVBoxLayout(dialog)
         from .gui import label
         layout.addWidget(label('Approve this action once?','title',True));layout.addWidget(label(proposal.get('reason',''),'muted',True));layout.addWidget(label(proposal['risk'],'badge',True))
@@ -149,7 +150,7 @@ class AssistantView:
         reject.setDefault(True);approve.setAutoDefault(False);layout.addWidget(buttons)
         def finish(accepted):
             response['approved']=accepted;response['event'].set();self.pending_approval=None;self.approval_dialog=None
-        buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);dialog.accepted.connect(lambda:finish(True));dialog.rejected.connect(lambda:finish(False));dialog.show()
+        buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);dialog.accepted.connect(lambda:finish(True));dialog.rejected.connect(lambda:finish(False));dialog.show();fade_in(dialog,rise=RISE)
         self.pc_state.setText('Waiting for your approval · no action has run')
     def dismiss_approval(self):
         if self.pending_approval:self.pending_approval['approved']=False;self.pending_approval['event'].set();self.pending_approval=None
