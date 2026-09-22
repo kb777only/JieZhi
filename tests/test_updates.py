@@ -8,6 +8,7 @@ from urllib.parse import urlparse, parse_qs
 
 import pytest
 
+from jiezhi import __version__
 from jiezhi.updates import (Updates, desktop_exec, fetch_client, notes_for,
                             write_desktop_entry)
 
@@ -42,7 +43,7 @@ def installation(tmp_path):
     git(origin, "init", "-q", "-b", "main")
     commit(origin, "The first commit", **{
         ".gitignore": ".venv\n",
-        "host/jiezhi/__init__.py": version_file("0.8.0-alpha.1"),
+        "host/jiezhi/__init__.py": version_file(__version__),
         "README.md": "one\n",
     })
 
@@ -90,7 +91,7 @@ def installation(tmp_path):
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    updates = Updates(version="0.8.0-alpha.1", api=f"http://127.0.0.1:{server.server_port}",
+    updates = Updates(version=__version__, api=f"http://127.0.0.1:{server.server_port}",
                       root=root, desktop_file=tmp_path / "apps/jiezhi.desktop")
     yield updates, origin, root
     server.shutdown()
@@ -107,13 +108,13 @@ def test_a_checkout_level_with_main_has_no_update(installation):
 def test_new_commits_become_the_patch_notes(installation):
     updates, origin, _ = installation
     commit(origin, "Teach the chip to move\n\nBefore: it snapped.\nAfter: it slides.", **{"README.md": "two\n"})
-    head = commit(origin, "Release JieZhi v0.9.0-alpha.1", **{
-        "host/jiezhi/__init__.py": version_file("0.9.0-alpha.1")})
+    head = commit(origin, "Release JieZhi v99.0.0-alpha.1", **{
+        "host/jiezhi/__init__.py": version_file("99.0.0-alpha.1")})
 
     update = updates.check()
     assert update["head"] == head
     assert update["count"] == 2
-    assert update["version"] == "0.9.0-alpha.1"
+    assert update["version"] == "99.0.0-alpha.1"
     # Newest first, with the body kept: these are what the box shows.
     assert update["notes"].index("Release JieZhi") < update["notes"].index("Teach the chip")
     assert "After: it slides." in update["notes"]

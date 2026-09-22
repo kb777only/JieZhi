@@ -2,8 +2,24 @@
 
 All notable changes to JieZhi are documented here.
 
-## Unreleased
+## 0.9.0-alpha.1 — 2026-09-22
 
+- Take white, black and grey out of the app entirely. Both themes are tints
+  and shades of four hues, blue first, then purple, red and pink: light mode is
+  a pale blue-violet room and dark mode a deep one, and text is a very dark
+  violet rather than black. Tests fail on any colour without a visible cast to
+  it and on any module outside `theme.py` that names a colour.
+- Move the window onto a scale built from 3, 4 and 6. Spacing, type, radii and
+  control heights all come from it; a panel is told apart by its fill rather
+  than a hairline, and a control carries a 3px edge at rest so focus recolours
+  it instead of shifting the text.
+- Give the window one motion language in `motion.py`: pages fade up as they
+  arrive, the navigation marker travels to the row picked, telemetry graphs
+  open and close by their own height, and dialogs and the window fade in. The
+  reduced-motion switch still stills all of it.
+- Promote Settings out from behind the gear, so the menu is nine destinations
+  in three groups of three, and cut the telemetry strip from eight graphs to
+  six. Battery temperature and GPU load are still in Sensor details.
 - Give the installer something to watch. Six stages fill a bar that walks
   through blue, purple, red and pink as it goes, with a spinner on whatever is
   running and the slow step named as slow. Piped into a file, into another
@@ -56,6 +72,10 @@ All notable changes to JieZhi are documented here.
   first. `GET /health` now reports why no model is listed.
 - Let `--host` actually serve a containerised app: the loopback `Host` check
   applies only while bound to loopback, and binding wider requires `--api-key`.
+
+There are no tags or release downloads from this version on: an installation
+follows main, and this version number marks the point on it. Host-side only;
+nothing in this version has been validated against the phone.
 
 ## 0.8.0-alpha.1 — 2026-09-21
 
